@@ -64,6 +64,7 @@ opoint_t **stravg;
 opoint_t ***z;
 int ***count, ***on, **navg, ***ntau;
 int ****thist;
+int allind[2];
 int stredit=0;  /* stredit = 0 (hasn't been done yet) 
 	         stredit = 1 (it's done already)
 		 stredit = -1 (it's in progress) */
@@ -74,8 +75,9 @@ double *twavg1, *twavg2, *tweight1, *tweight2, *ttau1, *ttau2;
 double *tstravg1, *tstravg2, *tz1, *tz2;
 int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2;
 int *tnwstack1, *tnwstack2;
-int verb=3;
-int me, nproc, status;
+int verb=2;
+int me, nproc, status, beadsp2, beadsp3;
+double tstepsq;
 
 char crname[30]="cutRNAin.dat";      // crystal structure file
 char secname[30]="cutRNAsec.con";    // secondary contacts
@@ -83,7 +85,7 @@ char tertname[30]="cutRNAtert.con";  // tertiary contacts
 char emname[30]="emerg.dat";         // emergency points
 char sname[30]="isolv";         // emergency points
 char filename[30];         // emergency points
-double **r0, **nextstep, **r0dists, **rdists, **vsolv, **rsolv, **f1;
+double **r0, **r0d6, **r0d12, **nextstep, **r0dists, **rdists, **vsolv, **rsolv, **f1;
 int **pos, **pos_poly;
 double ***v_cmax, ***v_cmay, ***v_cmaz;
 double ***v_cmx, ***v_cmy, ***v_cmz; 
@@ -101,9 +103,8 @@ double blen=5.;              /* length of box in each dir */
 double cutoff=3;
 int nx,ny,nz;
 double blinv;
-double kf, R0, eph1, eph2, ep1, sigma1, sigma2;
+double kf, R0, R02, eph1, eph2, ep1, sigma1, sigma16, sigma2, sigma26;
 double rdist(int index1, int index2);
-double r0dist(int index1, int index2);
 void wrxyz(int step);
 int globn;
 
@@ -138,6 +139,9 @@ void ****alloc4d(int varsize, int n, int p, int q, int r) ;
 void *****alloc5d(int varsize, int n, int p, int q, int r, int s) ;
 void *******alloc7d(int varsize, int n, int p, int q, int r, int s, int t, int u) ;
 double gssran(long *idum) ;
+double mypow2(double x);
+double mypow8(double x);
+double mypow14(double x);
 double ran2(long *idum) ;
 long seed;
 FILE * mainout, *xyzout;
@@ -173,6 +177,10 @@ int main(int argc,char** argv){
   FILE * ratFile, *filein;
   seed = iseed;
 
+  tstepsq=tstep*tstep;
+  beadsp2 = beads*beads;
+  beadsp3 = beadsp2*beads;
+
   //COMPILE_STAMP;
 
   int desired = MPI_THREAD_MULTIPLE;
@@ -181,19 +189,19 @@ int main(int argc,char** argv){
   //MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD,&me);
   MPI_Comm_size(MPI_COMM_WORLD,&nproc);
-  printf("proc %d: MPI_Init done\n",me); fflush(stdout);
+//  printf("proc %d: MPI_Init done\n",me); fflush(stdout);
   
   GA_Initialize();
-  printf("proc %d: GA_Initialize done\n",me); fflush(stdout);
+//  printf("proc %d: GA_Initialize done\n",me); fflush(stdout);
   
   MA_init(MT_DBL, 128*1024*1024, 16*1024*1024);
-  printf("proc %d: MA_init done\n",me); fflush(stdout);
+//  printf("proc %d: MA_init done\n",me); fflush(stdout);
 
   createservers();
 
   GA_Sync();
   if (me == 0) {
-    printf("checkpoint\n"); fflush(stdout);
+    printf("Starting..\n"); fflush(stdout);
   }
   nx=Lx/(int)blen;
   ny=Ly/(int)blen+1;
@@ -211,34 +219,40 @@ int main(int argc,char** argv){
 
   kf = 20;
   R0 = 2;
+  R02 = R0*R0;
   eph1 = 0.7;
   eph2 = 0.7;
   ep1 = 1;
   sigma1 = 7;
   sigma2 = 3.5;
+  sigma16 = mypow8(sigma1)/mypow2(sigma1);
+  sigma26 = mypow8(sigma2)/mypow2(sigma2);
   calpha[0]=0.;
   salpha[0]=1.;
   calpha[1]=0.;
   salpha[1]=1.;
 
-  sprintf(outname,"%s%d%s","out",me,".dat");
-  mainout = fopen(outname,"w");
-  fprintf(mainout,"rank = %d\n", me);
-  fclose(mainout);
+  if (verb >= 3) {
+      sprintf(outname,"%s%d%s","out",me,".dat");
+      mainout = fopen(outname,"w");
+      fprintf(mainout,"rank = %d\n", me);
+      fclose(mainout);
+  }
 
-  sprintf(wtname,"%s","weight.dat");
-  ratFile = fopen(wtname,"w");
-  fclose(ratFile);
-
-  sprintf(ratname,"%s","rate.dat");
-  ratFile = fopen(ratname,"w");
-  fclose(ratFile);
+  if (me == 0) {
+      sprintf(wtname,"%s","weight.dat");
+      ratFile = fopen(wtname,"w");
+      fclose(ratFile);
+      
+      sprintf(ratname,"%s","rate.dat");
+      ratFile = fopen(ratname,"w");
+      fclose(ratFile);
+  }
 
   seed *= me+1;
   for (i=0;i<100;i++){
     sum1 = ran2(&seed);
   }
-  printf("proc %d:  my seed is %d, ran2 = %f\n",me,seed,sum1); fflush(stdout);  
   
   lim = 2*beads;
   twavg1 = (double *) malloc(2*beads*sizeof(double));
@@ -291,6 +305,8 @@ int main(int argc,char** argv){
   r0 = (double **) alloc2d(sizeof(double), npart, 3);
   rvecs = (xpoint_t **) alloc2d(sizeof(xpoint_t), npart, npart);
   r0dists = (double **) alloc2d(sizeof(double), npart, npart);
+  r0d6 = (double **) alloc2d(sizeof(double), npart, npart);
+  r0d12 = (double **) alloc2d(sizeof(double), npart, npart);
   rdists = (double **) alloc2d(sizeof(double), npart, npart);
   nextstep = (double **) alloc2d(sizeof(double), npart, 3);
   Delta = (int ***) alloc3d(sizeof(int), npart, npart,4);
@@ -322,20 +338,16 @@ int main(int argc,char** argv){
     /* initialize string */
 
     if (strcmp(flname,"NOREAD") == 0) {
-      if (verb >= 2) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Automatically initializing string\n");
-	fclose(mainout);
-      }
-      if (strinit())
-	gaexit(2) ;  
+	if (verb >= 2) {
+	    printf("Automatically initializing string\n");
+	}
+	if (strinit())
+	    gaexit(2) ;  
     } else {
-      if (verb >= 2) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Using string configuration from %s\n", flname);
-	fclose(mainout);
-      }
-      strread();
+	if (verb >= 2) {
+	    printf("Using string configuration from %s\n", flname);
+	}
+	strread();
     }
     wrpath(0);
     
@@ -360,9 +372,7 @@ int main(int argc,char** argv){
     
     if (strcmp(wname,"NOREAD") == 0) {
       if (verb >= 2) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Automatically initializing weights\n");
-	fclose(mainout);
+	printf("Automatically initializing weights\n");
       }
       mcount = 0;
       for (j=0;j<2;j++) {
@@ -382,18 +392,14 @@ int main(int argc,char** argv){
       PutToServer_dbl(&Coords_wadj,1,-1,tweight2);
     } else {
       if (verb >= 2) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Using weight configuration from %s\n", wname);
-	fclose(mainout);
+	printf("Using weight configuration from %s\n", wname);
       }
       wtread();
     }
 
     if (strcmp(fxname,"NOREAD") != 0) {  /* read in fluxes */
       if (verb >= 2) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Using flux configuration from %s\n", fxname);
-	fclose(mainout);
+	printf("Using flux configuration from %s\n", fxname);
       }
       fxread();
     }
@@ -408,10 +414,8 @@ int main(int argc,char** argv){
   
   for (cycle=1;cycle<=T/every;cycle++) { 
     
-    if (verb >= 1) {
-      mainout = fopen(outname,"a");
-      fprintf(mainout,"Starting cycle %d of %d\n",cycle,T/every);
-      fclose(mainout);
+    if (me == 0) {
+	printf("Starting cycle %d of %d\n",cycle,T/every);
     }
 
     mcount = 0;
@@ -445,9 +449,11 @@ int main(int argc,char** argv){
 	  fclose(mainout);
 	}
 
-	sprintf(filename,"flow%d.xyz",me);
-	xyzout = fopen(filename,"w");
-	fprintf(xyzout,"%i \n polymer movie\n", npart);
+	if (verb >= 3) {
+	    sprintf(filename,"flow%d.xyz",me);
+	    xyzout = fopen(filename,"w");
+	    fprintf(xyzout,"%i \n polymer movie\n", npart);
+	}
 
 	if (((tcount != 1) || (strcmp(fxname,"NOREAD") != 0))|| (cycle!=1)) {
 	  back(lat,dir,bead);  /* initialize trajectory */
@@ -463,27 +469,18 @@ int main(int argc,char** argv){
 
 	endtraj = 0;
 	while (!endtraj) {
-
-	  if (tcount > every) {
-	    endtraj = 1;
-	    if (verb >= 3) {
-	      mainout = fopen(outname,"a");
-	      fprintf(mainout,"Ended traj: count\n");
-	      fclose(mainout);
-	    }
-	  } else {
-
+	    
 	    /* move */
 	    
 	    move();
-
+	    
 	    ind = dir*beads + bead;
 	    //LINE_STAMP;
 	    GetFromServer_dbl(&Coords_elaps,lat,ind,tempw);
 	    tempw[0] += 1.;
 	    //LINE_STAMP;
 	    PutToServer_dbl(&Coords_elaps,lat,ind,tempw);
-
+	    
 	    mytim += 1;
 	    myclock += 1;
 
@@ -494,8 +491,8 @@ int main(int argc,char** argv){
 		mainout = fopen(outname,"a");
 		fprintf(mainout,"proc %d: mytim = %d writing to xyz \n",me, mytim);
 		fclose(mainout);
+		wrxyz(mytim-1);
 	      }
-	      wrxyz(mytim-1);
 	    }
 
 	    if (tcount%stkfrq == 0) {
@@ -555,14 +552,14 @@ int main(int argc,char** argv){
 		  n1 = rstart[0];
 		  n2 = rstart[1];
 		  
-		  ind = 4*pow(beads,3)*dir + 4*pow(beads,2)*bead + 2*pow(beads,2)*n1 + 2*beads*n2 + beads*odir + newreg;
+		  ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
 		  //LINE_STAMP;
 		  GetFromServer_int(&Coords_prob,lat,ind,tempi);
 		  tempi[0]++;
 		  //LINE_STAMP;
 		  PutToServer_int(&Coords_prob,lat,ind,tempi);
 		  
-		  ind = 2*pow(beads,2)*dir + 2*beads*bead + beads*n1 + n2;
+		  ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
 		  //LINE_STAMP;
 		  GetFromServer_int(&Coords_nprob,lat,ind,tempi);
 		  tempi[0]++;
@@ -584,7 +581,7 @@ int main(int argc,char** argv){
 		GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
 		addpoint(olat,odir,newreg,coor,tempw[0],dir,state);  /* send point to other flux list */
 		endtraj = 1;
-	      } else {
+	      } else {  /* check for sec and prim crossings */
 		
 		/* sec crossing */
 		oldst = state;
@@ -628,14 +625,14 @@ int main(int argc,char** argv){
 		    n1 = rstart[0];
 		    n2 = rstart[1];
 		    
-		    ind = 4*pow(beads,3)*dir + 4*pow(beads,2)*bead + 2*pow(beads,2)*n1 + 2*beads*n2 + beads*dir + newreg;
+		    ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
 		    //LINE_STAMP;
 		    GetFromServer_int(&Coords_prob,lat,ind,tempi);
 		    tempi[0]++;
 		    //LINE_STAMP;
 		    PutToServer_int(&Coords_prob,lat,ind,tempi);
 		    
-		    ind = 2*pow(beads,2)*dir + 2*beads*bead + beads*n1 + n2;
+		    ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
 		    //LINE_STAMP;
 		    GetFromServer_int(&Coords_nprob,lat,ind,tempi);
 		    tempi[0]++;
@@ -656,17 +653,30 @@ int main(int argc,char** argv){
 	      }
 	    }
 	    tcount++;
-	  } /* next time step */
+	    if (tcount%globfrq == 0) {
+		ind = dir*beads + bead;
+		allind[0] = lat;
+		allind[1] = ind;
+		tempi[0] = globfrq + NGA_Read_inc(Coords_count.ga,allind,globfrq);
+		if (tempi[0] > every) {
+		    endtraj = 1;
+		    if (verb >= 3) {
+			mainout = fopen(outname,"a");
+			fprintf(mainout,"Ended traj: count\n");
+			fclose(mainout);
+		    }
+		}
+	    }
 	}  /* end of trajectory loop */
 	ind = dir*beads + bead;
+	allind[0] = lat;
+	allind[1] = ind;
+	tempi[0] = tcount%globfrq + NGA_Read_inc(Coords_count.ga,allind,tcount%globfrq);
 	if (verb >= 3) {
-	  mainout = fopen(outname,"a");
-	  fprintf(mainout,"Count on %d %d %d, is now = %d\n",lat,dir,bead,tcount);
-	  fclose(mainout);
+	    mainout = fopen(outname,"a");
+	    fprintf(mainout,"Count on %d %d %d, is now = %d\n",lat,dir,bead,tempi[0]);
+	    fclose(mainout);
 	}
-	//LINE_STAMP;
-	tempi[0] = tcount;
-	PutToServer_int(&Coords_count,lat,ind,tempi);
       }
     }       /* end of cycle */
 
@@ -676,9 +686,7 @@ int main(int argc,char** argv){
       if (me == 0) {
 
 	if (verb >= 2) {
-	  mainout = fopen(outname,"a");
-	  fprintf(mainout,"Moving string..\n",cycle);
-	  fclose(mainout);
+	  printf("Moving string..\n",cycle);
 	}
 	string();
 	wrpath(cycle);
@@ -693,7 +701,9 @@ int main(int argc,char** argv){
 	  for (bead=0;bead<=beads-1;bead++) {
 	    ind = dir*beads + bead;
 	    if ((ind%nproc) == me) {
-	      printf("proc %d is doing ind = %d of %d\n",me,ind,beads+beads-1);
+		if (verb >=3) {
+		    printf("proc %d is doing ind = %d of %d\n",me,ind,beads+beads-1);
+		}
 	      nobad(lat,dir,bead);
 	    }
 	  }
@@ -950,9 +960,8 @@ void back (int lat, int dir, int bead) {
       a *= ttwlist;
       
       if (ttwlist <= 0) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"twlist < 0!! %e, lat,dir,bead = %d %d %d\n", ttwlist, lat, dir, bead);
-	fprintf(mainout,"nlist = %d; full = %d\n", tnlist, tfull);
+	printf("proc %d:  twlist < 0!! %e, lat,dir,bead = %d %d %d\n", me, ttwlist, lat, dir, bead);
+	printf("proc %d:  nlist = %d; full = %d\n", me, tnlist, tfull);
 	if (tfull) {
 	  limit = mxlist;
 	} else {
@@ -962,9 +971,8 @@ void back (int lat, int dir, int bead) {
 	  ind = mxlist*beads*dir + mxlist*bead + i;
 	  //LINE_STAMP;
 	  GetFromServer_dbl(&Coords_wlist,lat,ind,tempw);
-	  fprintf(mainout,"i = %d; wt = %e\n",i,tempw[0]);
+	  printf("i = %d; wt = %e\n",i,tempw[0]);
 	}
-	fclose(mainout);
 	gaexit(9);
       }
 
@@ -973,48 +981,44 @@ void back (int lat, int dir, int bead) {
       while (sum < a) {
 	if ((!tfull) && (j > tnlist)) {  /* nlist is the actual number of points in the list */
 	  sum = 0.;                                                  /* so subtract 1 to use as an array index */
-	  mainout = fopen(outname,"a");
-	  fprintf(mainout,"Error!  Weights not deleted!\n");
-	  fprintf(mainout,"Random Number: %e\n", a/ttwlist);
-	  fprintf(mainout,"dir = %d\n", dir);
-	  fprintf(mainout,"nlist(%d,%d)=%d \n", lat,bead,tnlist);
+	  printf("proc %d:  Error!  Weights not deleted!\n",me);
+	  printf("Random Number: %e\n", a/ttwlist);
+	  printf("dir = %d\n", dir);
+	  printf("nlist(%d,%d)=%d \n", lat,bead,tnlist);
 	  for (i=0;i<tnlist;i++) {
 	    ind = mxlist*beads*dir + mxlist*bead + i;
 	    //LINE_STAMP;
 	    GetFromServer_dbl(&Coords_wlist,lat,ind,tempw);
 	    sum = sum + tempw[0];
 	  }
-	  fprintf(mainout,"j = %d\n", j);
-	  fprintf(mainout,"Manual sum: %e\n", sum);
-	  fprintf(mainout,"twlist = %e\n", ttwlist);
-	  fprintf(mainout,"Resetting twlist..\n");
+	  printf("j = %d\n", j);
+	  printf("Manual sum: %e\n", sum);
+	  printf("twlist = %e\n", ttwlist);
+	  printf("Resetting twlist..\n");
 	  j = tnlist+1;
-	  fprintf(mainout,"Use j = %d\n", j);
+	  fprintf("Use j = %d\n", j);
 	  tempw[0] = sum;
 	  ind = dir*beads + bead;
 	  //LINE_STAMP;
 	  PutToServer_dbl(&Coords_twlist,lat,ind,tempw);
-	  fclose(mainout);
 	  break;
 	} else if ((tfull) && (j > mxlist)) {
 	  sum = 0.;
-	  mainout = fopen(outname,"a");
-	  fprintf(mainout,"Error!  Weights not deleted!\n");
-	  fprintf(mainout,"Random Number: %e\n", a/ttwlist);
-	  fprintf(mainout,"dir = %d\n", dir);
-	  fprintf(mainout,"List full\n");
+	  printf("proc %d:  Error!  Weights not deleted!\n", me);
+	  printf("Random Number: %e\n", a/ttwlist);
+	  printf("dir = %d\n", dir);
+	  printf("List full\n");
 	  for (i=0;i<mxlist;i++) {
 	    ind = mxlist*beads*dir + mxlist*bead + i;
 	    //LINE_STAMP;
 	    GetFromServer_dbl(&Coords_wlist,lat,ind,tempw);
 	    sum = sum + tempw[0];
 	  }
-	  fprintf(mainout,"Manual sum: %e\n", sum);
-	  fprintf(mainout,"twlist = %e\n", ttwlist);
-	  fprintf(mainout,"Resetting twlist..\n");
+	  printf("Manual sum: %e\n", sum);
+	  printf("twlist = %e\n", ttwlist);
+	  printf("Resetting twlist..\n");
 	  j = mxlist+1;
-	  fprintf(mainout,"Use j = %d\n", j);
-	  fclose(mainout);
+	  printf("Use j = %d\n", j);
 	  tempw[0] = sum;
 	  ind = dir*beads + bead;
 	  //LINE_STAMP;
@@ -1057,9 +1061,9 @@ void back (int lat, int dir, int bead) {
       //LINE_STAMP;
       GetFromServer_int(&Coords_count,lat,ind,tempi);
       if (tempi[0] != 0) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"%d  Reset  %d, %d, %d, without a flux point!\n", tempi[0],lat+1, dir+1, bead+1); 
-	fclose(mainout);
+	  if (verb >= 2) {
+	      printf("proc %d:  %d  Reset  %d, %d, %d, without a flux point!\n", me, tempi[0],lat+1, dir+1, bead+1); 
+	  }
       }
       rstart[0] = -1;
       rstart[1] = -1;
@@ -1079,19 +1083,16 @@ void back (int lat, int dir, int bead) {
     
     bas = bascheck(lat,dir,bead);
     if (dir + bas == 1) {
-      mainout = fopen(outname,"a");
-      fprintf(mainout,"Error! Started in opposite basin!\n");
+      printf("proc %d:  Error! Started in opposite basin!\n",me);
       if (j == 0) {
-	fprintf(mainout,"Turning %d %d %d off.\n", lat, dir, bead);
-	fclose(mainout);
+	printf("Turning %d %d %d off.\n", lat, dir, bead);
 	
 	ind = dir*beads + bead;
 	tempi[0] = 0;
 	//LINE_STAMP;
 	PutToServer_int(&Coords_on,lat,ind,tempi);
       } else {
-	fprintf(mainout,"Bad flux point j = %d\n", j);
-	fclose(mainout);
+	printf("Bad flux point j = %d\n", j);
 	good = 0; 
 	//	gaexit(97);
       }
@@ -1099,14 +1100,14 @@ void back (int lat, int dir, int bead) {
     mytim = 0;
     newreg = which(lat,dir);
     if (newreg != bead) {
-      mainout = fopen(outname,"a");
-      fprintf(mainout,"Error:  Replica reinitialized in wrong region!\n");
-      fprintf(mainout,"which(%d,%d) = %d\n", lat, dir, newreg);
-      fprintf(mainout,"opoint: %e %e\n",ocoor.x[0],ocoor.x[1]);
-      fprintf(mainout,"rank is %d; j is %d; lat,dir,bead are (%d,%d,%d) \n", me, j, lat,dir,bead);
-      fprintf(mainout,"tnlist: %d, oran: %e\n",tnlist,oran);
-      fclose(mainout);
-      good = 0;
+	if (verb >= 2) {
+	    printf("proc %d:  Error:  Replica reinitialized in wrong region!\n",me);
+	    printf("which(%d,%d) = %d\n", lat, dir, newreg);
+	    printf("opoint: %e %e\n",ocoor.x[0],ocoor.x[1]);
+	    printf("rank is %d; j is %d; lat,dir,bead are (%d,%d,%d) \n", me, j, lat,dir,bead);
+	    printf("tnlist: %d, oran: %e\n",tnlist,oran);
+	    good = 0;
+	}
       //      gaexit(96);
     }
   }
@@ -1303,7 +1304,7 @@ void updtwts(int ind) {
 	    }
 	  }
 	}
-	if (verb >= 2) {
+	if (verb >= 3) {
 	  mainout = fopen(outname,"a");
 	  fprintf(mainout,"Weight update completed\n");
 	  fclose(mainout);
@@ -1327,20 +1328,21 @@ void updtwts(int ind) {
     
   /* write weights */
 
-  wtout = fopen(wtname,"a");
-  fprintf(wtout,"%d ",ind*wtupdt);
-  for (lat=0;lat<=1;lat++) {
-    for (dir=0;dir<=1;dir++) {
-      for (bead=0;bead<=beads-1;bead++) {
-	if ((lat == 0) || (bead != beads-1)) {
-	  fprintf(wtout,"%e ",weight[lat][dir][bead]);
-	}
+  if (me == 0) {
+      wtout = fopen(wtname,"a");
+      fprintf(wtout,"%d ",ind*wtupdt);
+      for (lat=0;lat<=1;lat++) {
+	  for (dir=0;dir<=1;dir++) {
+	      for (bead=0;bead<=beads-1;bead++) {
+		  if ((lat == 0) || (bead != beads-1)) {
+		      fprintf(wtout,"%e ",weight[lat][dir][bead]);
+		  }
+	      }
+	  }
       }
-    }
+      fprintf(wtout,"\n");
+      fclose(wtout);
   }
-  fprintf(wtout,"\n");
-  fclose(wtout);
-
 }
 /*-------------------------------------------------------------------------*/
 int wtmat(int lat, int stdir, int stbead) {
@@ -1701,7 +1703,7 @@ double ogtdist(opoint_t px, opoint_t py) {
    temp = 0.;
    
    for (i=0;i<=nop-1;i++) {
-     temp = temp + pow((px.x[i] - py.x[i]),2);
+     temp = temp + (px.x[i] - py.x[i])*(px.x[i] - py.x[i]);
    }
    temp = sqrt(temp);
    
@@ -1818,9 +1820,7 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   GetFromServer_int(&Coords_on,lat,ind,tempi);
   
   if (!tempi[0]) {
-    mainout = fopen(outname,"a");
-    fprintf(mainout,"Turning %d %d %d back on.\n", lat, dir, bead);
-    fclose(mainout);
+    printf("proc %d:  Turning %d %d %d back on.\n", me, lat, dir, bead);
     tempi[0] = 1;
     //LINE_STAMP;
     PutToServer_int(&Coords_on,lat,ind,tempi);
@@ -2100,9 +2100,7 @@ void repar(int lat, int dir) {
       test++;
 
       if (test == beads) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Error in repar!\n");
-	fclose(mainout);
+	printf("proc %d: Error in repar!\n", me);
 	gaexit(9);
       }
       sum += dist[test-1];
@@ -2353,7 +2351,7 @@ int getmin(int *lat, int *dir, int *bead) {
   GetFromServer_int(&Coords_on,1,-1,ton2);
 
 
-  low = every+1;
+  low = every;
   *lat = -1;
   *dir = 0;
   *bead = 0;
@@ -2396,7 +2394,7 @@ int getmin(int *lat, int *dir, int *bead) {
     }
   }
   
-  if (low > every) {
+  if (low >= every) {
     *lat = -1;           /* all regions have run for 'every' steps */
   }
 
@@ -2586,7 +2584,7 @@ point_t ptconv(int lat, int dir, int bead) {
     }
   }
 
-  printf("emerg[%d].op = %f\n",i,emerg[i].op);
+  //printf("emerg[%d].op = %f\n",i,emerg[i].op);
   if (!good) {
     printf("ptconv couldn't find a point for (%d,%d,%d) = %e\n",lat,dir,bead,z[lat][dir][bead].x[0]);
     gaexit(2);
@@ -2686,7 +2684,7 @@ void dostep(){
       // don't divide by polymass though, since the internal polymer forces are scaled assuming m = 1
       
       a = f1[i][x];
-      nextstep[i][x] = 0.5*pow(tstep,2)*a + tstep*coor.v[i][x];
+      nextstep[i][x] = 0.5*tstepsq*a + tstep*coor.v[i][x];
     }
   }
 
@@ -2727,11 +2725,11 @@ point_t force(){
 	/* sec and tert LJ forces */
 
 	if (Delta[p1][p2][0] == 1 ){  // seclist
-	  pre = eph1*12*( pow(r0dists[p1][p2],12)/pow(rdists[p1][p2],14) - pow(r0dists[p1][p2],6)/pow(rdists[p1][p2],8));
+	  pre = eph1*12*( r0d12[p1][p2]/mypow14(rdists[p1][p2]) - r0d6[p1][p2]/mypow8(rdists[p1][p2]));
 	  f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
 	}
 	if (Delta[p1][p2][1] == 1 ){  // terlist
-	  pre = eph2*12*( pow(r0dists[p1][p2],12)/pow(rdists[p1][p2],14) - pow(r0dists[p1][p2],6)/pow(rdists[p1][p2],8));
+	  pre = eph2*12*( r0d12[p1][p2]/mypow14(rdists[p1][p2]) - r0d6[p1][p2]/mypow8(rdists[p1][p2]));
 	  f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
 	}
 
@@ -2739,12 +2737,12 @@ point_t force(){
 
 	if( cutoff > 0 ){  // !seclist and !terlist
 	  if( rdists[p1][p2] < cutoff*sigma1 && Delta[p1][p2][0] == 0 && Delta[p1][p2][1] == 0){
-	    pre = ep1*6*pow(sigma1,6)/pow(rdists[p1][p2],8);
+	    pre = ep1*6*sigma16/mypow8(rdists[p1][p2]);
 	    f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
 	  }
 	} else {
 	  if( Delta[p1][p2][0] == 0 && Delta[p1][p2][1] == 0){
-	    pre = ep1*6*pow(sigma1,6)/pow(rdists[p1][p2],8);
+	    pre = ep1*6*sigma16/mypow8(rdists[p1][p2]);
 	    f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
 	  }
 	}
@@ -2753,7 +2751,7 @@ point_t force(){
       /* repulsive LJ forces - 2 away */
 
       if (p2-p1 == 2) {
-	pre = ep1*6*pow(sigma2,6)/pow(rdists[p1][p2],8);
+	pre = ep1*6*sigma26/mypow8(rdists[p1][p2]);
 	f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
       }
 
@@ -2761,7 +2759,7 @@ point_t force(){
 
       if (p2-p1 == 1) {
 	if(abs(rdists[p1][p2]-r0dists[p1][p2]) < R0) {  
-	  pre = -kf*(rdists[p1][p2] - r0dists[p1][p2])/(rdists[p1][p2]*(1.-pow(rdists[p1][p2]-r0dists[p1][p2],2)/pow(R0,2)));
+	  pre = -kf*(rdists[p1][p2] - r0dists[p1][p2])/(rdists[p1][p2]*(1.-mypow2(rdists[p1][p2]-r0dists[p1][p2])/R02));
 	  f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
 	} else {
 	  pre = -kf*(rdists[p1][p2]-r0dists[p1][p2])/rdists[p1][p2];
@@ -2781,11 +2779,11 @@ point_t force(){
       for (j=0;j<3;j++) {
 	f_1.x[j] = 0.;
 	trvec.x[j] = coor.x[p1][j] - phan[j];
-	tempr += pow(trvec.x[j],2);
+	tempr += mypow2(trvec.x[j]);
       }
       tempr = sqrt(tempr);
       if(abs(tempr-phanr0) < R0) {  
-	pre = -kf*(tempr - phanr0)/(tempr*(1.-pow(tempr-phanr0,2)/pow(R0,2)));
+	pre = -kf*(tempr - phanr0)/(tempr*(1.-mypow2(tempr-phanr0)/R02));
 	f_1 = vplus(f_1,vcmult(pre,trvec));
       } else {
 	pre = -kf*(tempr-phanr0)/tempr;
@@ -2822,11 +2820,12 @@ xpoint_t vplus(xpoint_t x, xpoint_t y) {
 }
 /*-----------------------------------------------------------------------------*/
 double rdist(int index1, int index2){
-  return sqrt( pow(coor.x[index1][0] - coor.x[index2][0], 2) + pow(coor.x[index1][1] - coor.x[index2][1], 2) + pow(coor.x[index1][2] - coor.x[index2][2], 2) );
-}
-/*-----------------------------------------------------------------------------*/
-double r0dist(int index1, int index2){
-  return sqrt( pow(r0[index1][0] - r0[index2][0], 2) + pow(r0[index1][1] - r0[index2][1], 2) + pow(r0[index1][2] - r0[index2][2], 2) );
+    double dx, dy, dz;
+
+    dx = coor.x[index1][0] - coor.x[index2][0];
+    dy = coor.x[index1][1] - coor.x[index2][1];
+    dz = coor.x[index1][2] - coor.x[index2][2];
+  return sqrt( dx*dx+dy*dy+dz*dz );
 }
 /*-----------------------------------------------------------------------------*/
 xpoint_t rvec(int index1, int index2){
@@ -2842,7 +2841,7 @@ void rdcryst() {
 
   FILE *cfile;
   int i, j;
-  double val;
+  double val,dx,dy,dz;
 
   cfile= fopen(crname,"rt");
   i=0;
@@ -2854,7 +2853,12 @@ void rdcryst() {
   
   for(i=0; i< npart; i++){
     for(j=0; j< npart; j++){
-      r0dists[i][j] = r0dist(i,j);
+	dx = r0[i][0]-r0[j][0];
+	dy = r0[i][1]-r0[j][1];
+	dz = r0[i][2]-r0[j][2];
+	r0dists[i][j] = sqrt(dx*dx + dy*dy + dz*dz);
+	r0d6[i][j] = mypow2(mypow2(r0dists[i][j]))*mypow2(r0dists[i][j]);
+	r0d12[i][j] = mypow2(r0d6[i][j]);
     }
   }
 }
@@ -3099,7 +3103,7 @@ void dorotate() {
       } else {
 	maxd += 5;
 	free(lab);
-	printf("Increasing maxd to %d\n",maxd);
+	//printf("Increasing maxd to %d\n",maxd);
 	lab = (int ****) alloc4d(sizeof(int),nx,ny,nz,maxd);
 	for (j=0;j<nx;j++) {
 	  for (k=0;k<ny;k++) {
@@ -3255,7 +3259,7 @@ void dorotate() {
 	if (box[i][j][k]+box_poly[i][j][k] > 0) {
 	  rho = 2.*ran2(&seed) - 1.;
 	  psi=2.*Pi*ran2(&seed);               /*rotation angle*/
-	  temp1 = sqrt(1.-pow(rho,2));
+	  temp1 = sqrt(1.-mypow2(rho));
 	  rndvec[0] = cos(psi)*temp1;
 	  rndvec[1] = sin(psi)*temp1;
 	  rndvec[2] = rho;
@@ -3545,7 +3549,7 @@ double getprob(int lat, int dir, int bead, int i, int j, int n1, int n2) {
     printf("%d %d %d %d %d %d %d\n",lat,dir,bead,i,j,n1,n2); fflush(stdout);
     gaexit(98);
   }
-  ind = 4*pow(beads,3)*dir + 4*pow(beads,2)*bead + 2*pow(beads,2)*i + 2*beads*j + beads*n1 + n2;
+  ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*i + 2*beads*j + beads*n1 + n2;
   if (lat == 0) {
     temp = tprob1[ind];
   } else {
@@ -3563,7 +3567,7 @@ double getnprob(int lat, int dir, int bead, int i, int j) {
     printf("%d %d %d %d %d\n",lat,dir,bead,i,j); fflush(stdout);
     gaexit(97);
   }
-  ind = 2*pow(beads,2)*dir + 2*beads*bead + beads*i + j; 
+  ind = 2*beadsp2*dir + 2*beads*bead + beads*i + j; 
 
   if (lat == 0) {
     temp = tnprob1[ind];
@@ -3619,4 +3623,21 @@ void wrxyz(int step) {
       fprintf(xyzout,"\n");
     }
   }
+}
+double mypow2(double x) {
+    return(x*x);
+}
+double mypow8(double x) {
+    double temp1, temp2;
+
+    temp1 = x*x;
+    temp2 = temp1*temp1;
+    return(temp2*temp2);
+}
+double mypow14(double x) {
+    double xp2, xp4;
+
+    xp2 = x*x;
+    xp4 = xp2*xp2;
+    return(xp4*xp4*xp4*xp2);
 }
