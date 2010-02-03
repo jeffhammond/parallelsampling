@@ -10,6 +10,8 @@
 #include "aryeh.h"
 #include "myCoordServer.h"
 
+#define _OPENMP
+
 #ifdef _OPENMP
 #include <omp.h>
 #else
@@ -3465,7 +3467,7 @@ void createservers() {
 
   int MaxNum = 2*beads;
 
-  printf("proc %d is creating coord servers...\n",me); fflush(stdout);
+//  printf("proc %d is creating coord servers...\n",me); fflush(stdout);
   status = CreateCoordServer_dbl(&Coords_weight, &MaxNum, "test");
   status = CreateCoordServer_dbl(&Coords_wadj, &MaxNum, "test");
   status = CreateCoordServer_dbl(&Coords_wavg, &MaxNum, "test");
@@ -3506,7 +3508,7 @@ void createservers() {
   status = CreateCoordServer_int(&Coords_clock, &MaxNum, "test");
   MaxNum = 2*beads*mxlist*2;
   status = CreateCoordServer_int(&Coords_from, &MaxNum, "test");
-  printf("all coord servers created by proc %d\n",me); fflush(stdout);
+//  printf("all coord servers created by proc %d\n",me); fflush(stdout);
 }
 
 void initvar() {
