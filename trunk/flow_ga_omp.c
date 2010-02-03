@@ -2572,14 +2572,20 @@ point_t ptconv(int lat, int dir, int bead) {
      It is used only for restarting the replica when
      no flux points are available */
 
-  int i, j, part, good;
+  int i, j, part, good, odir;
   point_t temp;
   
   good = 0;
 
+  if (dir == 1) {
+      odir = 0;
+  } else {
+      odir = 1;
+  }
+
   for (i=0;i<nemerg;i++) {
     ocoor.x[0] = emerg[i].op;
-    if (which(lat,dir) == bead) {
+    if ((which(lat,dir) == bead) && (bascheck(lat,dir,bead) != odir)) {
       for (part=0;part<npart;part++) {
 	for (j=0;j<ndim;j++) {
 	  temp.x[part][j] = emerg[i].x[part][j];
@@ -3126,14 +3132,16 @@ void dorotate() {
 		}
 	    }
 	} /* end of parallel region */
-	maxd += 5;
-	free(lab);
-	//printf("Increasing maxd to %d\n",maxd);
-	lab = (int ****) alloc4d(sizeof(int),nx,ny,nz,maxd);
-	for (j=0;j<nx;j++) {
-	    for (k=0;k<ny;k++) {
-		for (l=0;l<nz;l++) {
-		    nlab[j][k][l] = 0;
+	if (!good) {
+	    maxd += 5;
+	    free(lab);
+	    //printf("Increasing maxd to %d\n",maxd);
+	    lab = (int ****) alloc4d(sizeof(int),nx,ny,nz,maxd);
+	    for (j=0;j<nx;j++) {
+		for (k=0;k<ny;k++) {
+		    for (l=0;l<nz;l++) {
+			nlab[j][k][l] = 0;
+		    }
 		}
 	    }
 	}
