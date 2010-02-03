@@ -2722,7 +2722,7 @@ point_t force(){
   double dvdr, tempr, pre;
   point_t f;
 
-#pragma omp parallel default(shared) private(i,j,p1,p2)
+#pragma omp parallel default(shared) private(i,j,p1,p2,pre,f_1,tempr,trvec)
   {
 #pragma omp for schedule(static)
       for (i=0;i<npart;i++) {
