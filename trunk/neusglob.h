@@ -6,19 +6,20 @@
 #define NEMERG_c 385
 
 const int phase = 2;
-const int wtalg = 2;       /* 1 = local ; 2 = global */
+const int wtalg = 1;       /* 1 = local ; 2 = global */
 const char flname[30] = "NOREAD";
 const char wname[30] = "NOREAD";
 const char fxname[30] = "NOREAD";
 
-const int beads = 1;
-const int wtupdt = 1000;
-const int T = 1000;         /* measured in number of steps */
-const int every = 1000;
+const int beads = 30;
+const int wtupdt = 10000;
+const int T = 10000;         /* measured in number of steps */
+const int every = 10000;
 const int stkfrq = 1000;
-const int wrfrq = 1000;
+const int wrfrq = 10000;
 const int xyzfrq = 1000;
-const int chkfrq = 100;  
+const int chkfrq = 1000;  
+const int globfrq = 100;  
 const int tres = 100;
 const int nemerg = NEMERG_c;
 const double tmin = 100.;
