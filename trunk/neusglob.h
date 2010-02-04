@@ -12,11 +12,11 @@ const char wname[30] = "NOREAD";
 const char fxname[30] = "NOREAD";
 
 const int beads = 30;
-const int wtupdt = 10000;
-const int T = 10000;         /* measured in number of steps */
-const int every = 10000;
+const int wtupdt = 100000;
+const int T = 200000;         /* measured in number of steps */
+const int every = 200000;
 const int stkfrq = 1000;
-const int wrfrq = 10000;
+const int wrfrq = 200000;
 const int xyzfrq = 1000;
 const int chkfrq = 1000;  
 const int globfrq = 100;  
@@ -25,7 +25,7 @@ const int nemerg = NEMERG_c;
 const double tmin = 100.;
 const double tmax = 400.;
 
-const double s = 5.e-3;
+const double s = 5.e-2;
 const double frac = 0.1;
 const double wfrac = 1.0;
 const double kappa = 0.1;
