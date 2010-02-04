@@ -10,8 +10,6 @@
 #include "aryeh.h"
 #include "myCoordServer.h"
 
-#define _OPENMP
-
 #ifdef _OPENMP
 #include <omp.h>
 #else
@@ -113,7 +111,6 @@ double cutoff=3;
 int nx,ny,nz;
 double blinv;
 double kf, R0, R02, eph1_12, eph2_12, ep1_6, sigma1, sigma16, sigma2, sigma26;
-double rdist(int index1, int index2);
 void wrxyz(int step);
 int globn;
 
@@ -2675,26 +2672,35 @@ void move() {
 /*-------------------------------------------------------------------------*/
 void dostep(){
   int i, j, k, x;
-  double a, f2[npart][ndim];
+  double a, f2[npart][ndim],temp;
   point_t f, force();
-  xpoint_t rvec(int i, int j);
     
-#pragma omp parallel for default(shared) private(i,j,k) schedule(static)
+#pragma omp parallel for default(shared) private(i,j,k,temp) schedule(static)
   for(i=0; i< npart; i++){
-    for(j=0; j< npart; j++){
-      if (i <= j) {
-	rdists[i][j] = rdist(i,j);
-	rvecs[i][j] = rvec(i,j);
-      } else {
-	rdists[i][j] = rdists[j][i];
-	for (k=0; k<3; k++) {
-	  rvecs[i][j].x[k] = -rvecs[j][i].x[k];
-	}
+      for(j=i; j< npart; j++){
+	  temp = 0.;
+	  for (k=0;k<3;k++) {
+	      temp += (coor.x[i][k] - coor.x[j][k])*(coor.x[i][k] - coor.x[j][k]);
+	  }
+	  rdists[i][j] = sqrt(temp);
+	  
+	  for (k=0;k<ndim;k++) {
+	      rvecs[i][j].x[k] = coor.x[i][k]-coor.x[j][k];
+	  }
       }
-    }
   }
   
-#pragma omp parallel for default(shared) private(i,x) schedule(static)
+#pragma omp parallel for default(shared) private(i,j,k) schedule(static)
+  for(i=1; i< npart; i++){
+      for(j=0; j< i; j++){
+	  rdists[i][j] = rdists[j][i];
+	  for (k=0; k<3; k++) {
+	      rvecs[i][j].x[k] = -rvecs[j][i].x[k];
+	  }
+      }
+  }
+
+#pragma omp parallel for default(shared) private(i,x,a) schedule(static)
   for(i=0; i< npart; i++){
     for(x=0; x< 3; x++){	
       /* calculate a(t) = F/m */        
@@ -2839,25 +2845,6 @@ xpoint_t vplus(xpoint_t x, xpoint_t y) {
 
   for (i=0;i<3;i++) {
     temp.x[i] = x.x[i]+y.x[i];
-  }
-  return temp;
-}
-/*-----------------------------------------------------------------------------*/
-double rdist(int index1, int index2){
-    double dx, dy, dz;
-
-    dx = coor.x[index1][0] - coor.x[index2][0];
-    dy = coor.x[index1][1] - coor.x[index2][1];
-    dz = coor.x[index1][2] - coor.x[index2][2];
-  return sqrt( dx*dx+dy*dy+dz*dz );
-}
-/*-----------------------------------------------------------------------------*/
-xpoint_t rvec(int index1, int index2){
-  xpoint_t temp;
-  int i;
-
-  for (i=0;i<ndim;i++) {
-    temp.x[i] = coor.x[index1][i]-coor.x[index2][i];
   }
   return temp;
 }
@@ -3075,7 +3062,7 @@ void stream() {
 void dorotate() {
 
     double deltax[ndim], rho, psi, temp1, rndvec[ndim], odisp[ndim], rnd[3];
-    int i, j, k, l, m, n, good, rr, ind, ii, err, errj, errk, errl;
+    int i, j, k, l, m, n, good, rr, ind, ii, err, errj, errk, errl, lim;
     double temp4;
     xpoint_t distchg(double odisp[3], double rndvec[3], int rr), ndisp;
     FILE *filein;
@@ -3261,7 +3248,7 @@ void dorotate() {
 
     }  /* end of parallel region */
     if (err) {
-	printf("Polymer outside of box! %d %d %d\n",j,k,l);
+	printf("Polymer outside of box! %d %d %d\n",errj,errk,errl);
 	filein = fopen("fpoly_crash.dat","w");
 	
 	for (j=0; j<npart; j++) {
@@ -3301,14 +3288,15 @@ void dorotate() {
 	v_cmaz[i][j][k]+= polymass*coor.v[n][2];
     }
       
-#pragma omp parallel for default(shared) private(i,j,k,m) schedule(static)      
+#pragma omp parallel for default(shared) private(i,j,k,lim) schedule(static)      
     for(i=0;i<nx;i++){
 	for(j=0;j<ny;j++){
 	    for(k=0;k<nz;k++){
-		if (solvmass*box[i][j][k]+polymass*box_poly[i][j][k] != 0.) {
-		    v_cmx[i][j][k]=v_cmax[i][j][k]/(solvmass*box[i][j][k]+polymass*box_poly[i][j][k]);
-		    v_cmy[i][j][k]=v_cmay[i][j][k]/(solvmass*box[i][j][k]+polymass*box_poly[i][j][k]);
-		    v_cmz[i][j][k]=v_cmaz[i][j][k]/(solvmass*box[i][j][k]+polymass*box_poly[i][j][k]);
+		lim = solvmass*box[i][j][k]+polymass*box_poly[i][j][k];
+		if (lim != 0.) {
+		    v_cmx[i][j][k]=v_cmax[i][j][k]/lim;
+		    v_cmy[i][j][k]=v_cmay[i][j][k]/lim;
+		    v_cmz[i][j][k]=v_cmaz[i][j][k]/lim;
 		}
 	    }
 	}
