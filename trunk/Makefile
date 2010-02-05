@@ -31,10 +31,10 @@
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   OMPI_FLAGS=-qsmp=omp
+   OMP_FLAGS=-qsmp=omp
 
-   LIB=$(GA_LIB) $(MPI_LIB) $(EXTRAS)
-   INC=$(GA_INC) $(MPI_INC)
+   LIB=$(GA_LIB) $(EXTRAS)
+   INC=$(GA_INC)
 
    CC=mpixlc_r
    CFLAGS=-g $(INC) $(OMPI_FLAGS)
