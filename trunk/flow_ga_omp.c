@@ -178,7 +178,7 @@ int main(int argc,char** argv){
   void updtwts(int ind);
   void wrextend(int index);
   void rddelta(), rdcryst(), rdsolv(), rdemerg();
-  double rate[2][2], sum1, sum2, tempw[1];
+  double rate[2][2], sum1, sum2, tempw[1], t1, t2;
   FILE * outFile;
   FILE * ratFile, *filein;
   seed = iseed;
@@ -414,6 +414,10 @@ int main(int argc,char** argv){
 
   /* check point */
   GA_Sync();
+
+  if (me == 0) {
+      t1 = MPI_Wtime();
+  }
   getstring();
 
   /* ---------------start of dynamics loop-------------------------- */
@@ -790,8 +794,8 @@ int main(int argc,char** argv){
   /* set the restart point: write fluxes, weights, etc. */
   
   if (me == 0) {
-
-    printf("proc %d: tying it up...\n",me); fflush(stdout);
+      t2 = MPI_Wtime();
+      printf("total time of dynamics steps: %f\n",t2-t1); fflush(stdout);
 
   /* write weights */
 

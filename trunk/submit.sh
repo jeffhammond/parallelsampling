@@ -6,7 +6,7 @@
 
 START=$(date +%s)
 
-qsub --env OMP_NUM_THREADS=3 -A ParallelSampling -n 512 --mode smp -q default -t 30 flow_ga.x
+qsub --env OMP_NUM_THREADS=3 -A ParallelSampling -n 1024 --mode smp -q default -t 30 flow_ga.x
 
 END=$(date +%s)
 DIFF=$(( $END - $START ))
