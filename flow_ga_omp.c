@@ -52,7 +52,6 @@ ServedCoords Coords_narr;
 ServedCoords Coords_on;
 ServedCoords Coords_navg;
 ServedCoords Coords_bdedit;
-ServedCoords Coords_usingf;
 ServedCoords Coords_ntau;
 ServedCoords Coords_prob;
 ServedCoords Coords_nprob;
@@ -110,7 +109,7 @@ double blen=5.;              /* length of box in each dir */
 double cutoff=3;
 int nx,ny,nz;
 double blinv;
-double kf, R0, R02, eph1_12, eph2_12, ep1_6, sigma1, sigma16, sigma2, sigma26;
+double kf, R0, ooR02, eph1_12, eph2_12, ep1_6, sigma1, sigma16, sigma2, sigma26;
 void wrxyz(int step);
 int globn;
 
@@ -179,6 +178,7 @@ int main(int argc,char** argv){
   void wrextend(int index);
   void rddelta(), rdcryst(), rdsolv(), rdemerg();
   double rate[2][2], sum1, sum2, tempw[1], t1, t2;
+  int wtupdt_s;
   FILE * outFile;
   FILE * ratFile, *filein;
   seed = iseed;
@@ -186,13 +186,18 @@ int main(int argc,char** argv){
   tstepsq=tstep*tstep;
   beadsp2 = beads*beads;
   beadsp3 = beadsp2*beads;
+  wtupdt_s = wtupdt/100;
 
   //COMPILE_STAMP;
 
+#ifdef _OPENMP
   int desired = MPI_THREAD_MULTIPLE;
   int provided;
   MPI_Init_thread(&argc, &argv, desired, &provided);
-  //MPI_Init(&argc, &argv);
+#else
+  MPI_Init(&argc, &argv);
+#endif
+
   MPI_Comm_rank(MPI_COMM_WORLD,&me);
   MPI_Comm_size(MPI_COMM_WORLD,&nproc);
 //  printf("proc %d: MPI_Init done\n",me); fflush(stdout);
@@ -225,7 +230,7 @@ int main(int argc,char** argv){
 
   kf = 20;
   R0 = 2;
-  R02 = R0*R0;
+  ooR02 = 1./(R0*R0);
   eph1_12 = 0.7*12;
   eph2_12 = 0.7*12;
   ep1_6 = 1*6;
@@ -510,7 +515,7 @@ int main(int argc,char** argv){
 	    }
 	    
 	    if (wtalg == 1) { /* local wt alg */
-	      if ((tcount + cycle*every)%(wtupdt/100) == 0) {
+	      if ((tcount + cycle*every)%wtupdt_s == 0) {
 		wtstack(lat,dir,bead);
 	      }
 	    }
@@ -884,7 +889,6 @@ int main(int argc,char** argv){
   status = DestroyCoordServer(&Coords_narr);
   status = DestroyCoordServer(&Coords_on);
   status = DestroyCoordServer(&Coords_bdedit);
-  status = DestroyCoordServer(&Coords_usingf);
   status = DestroyCoordServer(&Coords_ntau);
   status = DestroyCoordServer(&Coords_navg);
 
@@ -927,7 +931,7 @@ void back (int lat, int dir, int bead) {
   
   double sum, a, ttwlist, tempw[1], oran;
   int i, j, newreg, bascheck(int lat, int dir, int bead), ind, limit, k;
-  int tnlist, tfull, part, dim, good;
+  int tnlist, tfull, part, dim, good, lockind;
   point_t point;
   FILE *filein;
 
@@ -935,21 +939,9 @@ void back (int lat, int dir, int bead) {
   while (!good) {
     good = 1;
 
-    ind = dir*beads + bead;
+    lockind = lat*2*beads + dir*beads + bead;
     //LINE_STAMP;
-    GetFromServer_int(&Coords_usingf,lat,ind,tempi);
-    while (tempi[0]) {
-      
-      usleep(50);
-      //LINE_STAMP;
-      //printf("proc %d: waiting in back for [%d,%d,%d]\n",me,lat,dir,bead); fflush(stdout);
-      GetFromServer_int(&Coords_usingf,lat,ind,tempi);
-    }
-    tempi[0] = 1;
-    //LINE_STAMP;
-    PutToServer_int(&Coords_usingf,lat,ind,tempi);
-    
-    //------------------------------------------------
+    GA_Lock(lockind);
     
     ind = dir*beads + bead;
     //LINE_STAMP;
@@ -1010,7 +1002,9 @@ void back (int lat, int dir, int bead) {
 	  tempw[0] = sum;
 	  ind = dir*beads + bead;
 	  //LINE_STAMP;
+	  GA_Init_fence();
 	  PutToServer_dbl(&Coords_twlist,lat,ind,tempw);
+	  GA_Fence();
 	  break;
 	} else if ((tfull) && (j > mxlist)) {
 	  sum = 0.;
@@ -1032,7 +1026,9 @@ void back (int lat, int dir, int bead) {
 	  tempw[0] = sum;
 	  ind = dir*beads + bead;
 	  //LINE_STAMP;
+	  GA_Init_fence();
 	  PutToServer_dbl(&Coords_twlist,lat,ind,tempw);
+	  GA_Fence();
 	  break;
 	}
 	ind = mxlist*beads*dir + mxlist*bead + j-1;
@@ -1080,10 +1076,7 @@ void back (int lat, int dir, int bead) {
       coor = ptconv(lat,dir,bead);
     }
     
-    tempi[0] = 0;
-    //LINE_STAMP;
-    ind = dir*beads + bead;
-    PutToServer_int(&Coords_usingf,lat,ind,tempi);
+    GA_Unlock(lockind);
     
     /* get ocoor, state, bas, check the validity of the point */
     
@@ -1180,7 +1173,7 @@ void wtstack(int lat, int dir, int bead) {
 /*-------------------------------------------------------------------------*/
 void updtwts(int ind) {
    
-  double temp;
+  double temp,lim2;
   int tgt,lat,dir,bead,good,lim,i, mcount,j,n1,n2,mcount2;
   FILE * wtout;
   int wtmat(int lat, int sdir, int sbead);
@@ -1307,10 +1300,11 @@ void updtwts(int ind) {
 	} else {
 	  lim = 2*(beads-1);
 	}
+	lim2 = 1.0/(float)lim;
 	for (dir=0;dir<=1;dir++) {
 	  for (bead=0;bead<=beads-1;bead++) {
 	    if ((lat == 0) || (bead != beads-1)) {
-	      weight[lat][dir][bead] = wavg[lat][dir][bead]/(float)lim;
+	      weight[lat][dir][bead] = wavg[lat][dir][bead]*lim2;
 	    }
 	  }
 	}
@@ -1360,7 +1354,7 @@ int wtmat(int lat, int stdir, int stbead) {
   /* this function calculates the weights */
 
   double **fmat, **b, *vec, sum, avtau, tw, wt, tn, tprob;
-  double getfrac(int lat, int dir, int bead, int dir2, int bead2), tempw[1];
+  double getfrac(int lat, int dir, int bead, int dir2, int bead2), tempw[1],temp1;
   int lim, i, j, dir, bead, regi, dirind[2*beads], regind[2*beads];
   int ndir, ni, odir, good, sdir, sbead, ind;
   FILE * matout;
@@ -1415,6 +1409,7 @@ int wtmat(int lat, int stdir, int stbead) {
     //LINE_STAMP;
     GetFromServer_dbl(&Coords_twlist,lat-1,ind,tempw);
     tw = tempw[0];
+    temp1 = 1./(avtau*tw);
     //tw = flist[lat-1][dir-1][regi-1].twlist;
     if (dir == 1) {
       if (regi != lim/2) {
@@ -1444,7 +1439,7 @@ int wtmat(int lat, int stdir, int stbead) {
 	  tprob = getprob(lat-1,dir-1,regi-1,odir-1,j-1,ndir-1,ni-1)/(float)getnprob(lat-1,dir-1,regi-1,odir-1,j-1);
 	  if (tprob != 0.) {
 	    tn = getfrac(lat,dir,regi,odir,j);
-	    sum += tprob*tn/(avtau*tw);
+	    sum += tprob*tn*temp1;;
 	  }
 	}
       }
@@ -1534,7 +1529,7 @@ void wrextend(int index) {
   /* this function writes out a theta histogram */
 
   int lat, dir, bead, ind, mcount, mcount2, tsum;
-  double x[tres], sum, ext;
+  double x[tres], sum, ext, ootsum;
   FILE * tout;
   char tname[30];
   
@@ -1574,11 +1569,12 @@ void wrextend(int index) {
 	  tsum += thist[lat][dir][bead][ind];
 	}
 	if (tsum) {
-	  for (ind=0;ind<=tres-1;ind++) {
-	    if (thist[lat][dir][bead][ind]) {
-	      x[ind] += thist[lat][dir][bead][ind]*weight[lat][dir][bead]/(float)tsum;
+	    ootsum = 1./(float)tsum;
+	    for (ind=0;ind<=tres-1;ind++) {
+		if (thist[lat][dir][bead][ind]) {
+		    x[ind] += thist[lat][dir][bead][ind]*weight[lat][dir][bead]*ootsum;
+		}
 	    }
-	  }
 	}
       }
     }
@@ -1725,23 +1721,18 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   /* this function adds the point 'x' to the (lat,dir,bead) fluxlist
      along with the weight 'wt' */
   
-  int tgt, n, i, ind, tfull, wind, part, dim, ptind;
+  int tgt, n, i, ind, tfull, wind, part, dim, ptind, lockind;
   double tw[1], ttw[1], tempw[1];
   
   // printf("proc %d: adding point to [%d,%d,%d] w = %e\n",me,lat,dir,bead,wt); fflush(stdout);
-  ind = dir*beads + bead;
-  //LINE_STAMP;
-  GetFromServer_int(&Coords_usingf,lat,ind,tempi);
-  while (tempi[0]) {
-    usleep(50);
-    //LINE_STAMP;
-    //printf("proc %d: waiting in addpoint for [%d,%d,%d]\n",me,lat,dir,bead); fflush(stdout);
-    GetFromServer_int(&Coords_usingf,lat,ind,tempi);
-  }
-  tempi[0] = 1;
-  //LINE_STAMP;
-  PutToServer_int(&Coords_usingf,lat,ind,tempi);
 
+  lockind = lat*2*beads + dir*beads + bead;
+  //LINE_STAMP;
+  GA_Lock(lockind);
+  
+  GA_Init_fence();
+  ind = dir*beads + bead;
+  
   //LINE_STAMP;
   GetFromServer_int(&Coords_nlist,lat,ind,tempi);
   tempi[0]++;
@@ -1836,10 +1827,9 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
     PutToServer_int(&Coords_on,lat,ind,tempi);
   }
 
-  tempi[0] = 0;
-  //LINE_STAMP;
-  ind = dir*beads + bead;
-  PutToServer_int(&Coords_usingf,lat,ind,tempi);   
+  GA_Fence();
+  GA_Unlock(lockind);
+
  }
 /*-------------------------------------------------------------------------*/
 opoint_t ptavg(opoint_t x, opoint_t y) {
@@ -2792,7 +2782,7 @@ point_t force(){
 	      
 	      if (p2-p1 == 1) {
 		  if(abs(rdists[p1][p2]-r0dists[p1][p2]) < R0) {  
-		      pre = -kf*(rdists[p1][p2] - r0dists[p1][p2])/(rdists[p1][p2]*(1.-mypow2(rdists[p1][p2]-r0dists[p1][p2])/R02));
+		      pre = -kf*(rdists[p1][p2] - r0dists[p1][p2])/(rdists[p1][p2]*(1.-mypow2(rdists[p1][p2]-r0dists[p1][p2])*ooR02));
 		      f_1 = vplus(f_1,vcmult(pre,rvecs[p1][p2]));
 		  } else {
 		      pre = -kf*(rdists[p1][p2]-r0dists[p1][p2])/rdists[p1][p2];
@@ -2816,7 +2806,7 @@ point_t force(){
 	      }
 	      tempr = sqrt(tempr);
 	      if(abs(tempr-phanr0) < R0) {  
-		  pre = -kf*(tempr - phanr0)/(tempr*(1.-mypow2(tempr-phanr0)/R02));
+		  pre = -kf*(tempr - phanr0)/(tempr*(1.-mypow2(tempr-phanr0)*ooR02));
 		  f_1 = vplus(f_1,vcmult(pre,trvec));
 	      } else {
 		  pre = -kf*(tempr-phanr0)/tempr;
@@ -3066,8 +3056,8 @@ void stream() {
 void dorotate() {
 
     double deltax[ndim], rho, psi, temp1, rndvec[ndim], odisp[ndim], rnd[3];
-    int i, j, k, l, m, n, good, rr, ind, ii, err, errj, errk, errl, lim;
-    double temp4;
+    int i, j, k, l, m, n, good, rr, ind, ii, err, errj, errk, errl;
+    double temp4, lim, lim2;
     xpoint_t distchg(double odisp[3], double rndvec[3], int rr), ndisp;
     FILE *filein;
 
@@ -3292,15 +3282,16 @@ void dorotate() {
 	v_cmaz[i][j][k]+= polymass*coor.v[n][2];
     }
       
-#pragma omp parallel for default(shared) private(i,j,k,lim) schedule(static)      
+#pragma omp parallel for default(shared) private(i,j,k,lim,lim2) schedule(static)      
     for(i=0;i<nx;i++){
 	for(j=0;j<ny;j++){
 	    for(k=0;k<nz;k++){
 		lim = solvmass*box[i][j][k]+polymass*box_poly[i][j][k];
 		if (lim != 0.) {
-		    v_cmx[i][j][k]=v_cmax[i][j][k]/lim;
-		    v_cmy[i][j][k]=v_cmay[i][j][k]/lim;
-		    v_cmz[i][j][k]=v_cmaz[i][j][k]/lim;
+		    lim2 = 1./lim;
+		    v_cmx[i][j][k]=v_cmax[i][j][k]*lim2;
+		    v_cmy[i][j][k]=v_cmay[i][j][k]*lim2;
+		    v_cmz[i][j][k]=v_cmaz[i][j][k]*lim2;
 		}
 	    }
 	}
@@ -3471,7 +3462,6 @@ void createservers() {
   status = CreateCoordServer_int(&Coords_narr, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_on, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_bdedit, &MaxNum, "test");
-  status = CreateCoordServer_int(&Coords_usingf, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_ntau, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_full, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_nlist, &MaxNum, "test");
@@ -3500,6 +3490,10 @@ void createservers() {
   status = CreateCoordServer_int(&Coords_clock, &MaxNum, "test");
   MaxNum = 2*beads*mxlist*2;
   status = CreateCoordServer_int(&Coords_from, &MaxNum, "test");
+
+  MaxNum = 2*2*beads;
+  status = GA_Create_mutexes(MaxNum);
+
 //  printf("all coord servers created by proc %d\n",me); fflush(stdout);
 }
 
@@ -3524,34 +3518,36 @@ void initvar() {
     }
   }
 
-  mcount=0;
-  for (j=0; j<=1; j++) {
-    for (k=0; k<=beads-1; k++) {
-      tint1[mcount] = 1;
-      mcount++;
-    }
-  }
-  //LINE_STAMP;
-  PutToServer_int(&Coords_on,0,-1,tint1);
-  //LINE_STAMP;
-  PutToServer_int(&Coords_on,1,-1,tint1);
-
-  tempi[0] = -1;
-  mcount=0;
-  for (j=0; j<=1; j++) {
-    for (k=0; k<=beads-1; k++) {
-      for (ind=0; ind<mxlist; ind++) {
-	for (i=0; i<2; i++) {
-	  //LINE_STAMP;
-	  PutToServer_int(&Coords_from,0,mcount,tempi);
-	  //LINE_STAMP;
-	  PutToServer_int(&Coords_from,1,mcount,tempi);
-	  mcount++;
-	}
+  if (me ==0) {
+      mcount=0;
+      for (j=0; j<=1; j++) {
+	  for (k=0; k<=beads-1; k++) {
+	      tint1[mcount] = 1;
+	      mcount++;
+	  }
       }
-    }
+      //LINE_STAMP;
+      PutToServer_int(&Coords_on,0,-1,tint1);
+      //LINE_STAMP;
+      PutToServer_int(&Coords_on,1,-1,tint1);
+      
+      tempi[0] = -1;
+      mcount=0;
+      for (j=0; j<=1; j++) {
+	  for (k=0; k<=beads-1; k++) {
+	      for (ind=0; ind<mxlist; ind++) {
+		  for (i=0; i<2; i++) {
+		      //LINE_STAMP;
+		      PutToServer_int(&Coords_from,0,mcount,tempi);
+		      //LINE_STAMP;
+		      PutToServer_int(&Coords_from,1,mcount,tempi);
+		      mcount++;
+		  }
+	      }
+	  }
+      }
   }
-  
+      
   for (j=0; j<=1; j++) {
     for (k=0; k<=beads-1; k++) {
       navg[j][k] = 0;
