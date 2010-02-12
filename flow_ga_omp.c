@@ -79,6 +79,8 @@ int stredit=0;  /* stredit = 0 (hasn't been done yet)
 
 double *twavg1, *twavg2, *tweight1, *tweight2, *ttau1, *ttau2;
 double *tstravg1, *tstravg2, *tz1, *tz2;
+double globtim=0.;
+int nglobtim=0;
 int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2;
 int *tnwstack1, *tnwstack2;
 int verb=2;
@@ -115,7 +117,7 @@ int globn;
 
 
 const int ndim=NDIM_c, mxlist=MXLIST_c, nop=NOP_c, npart=NPART_c;
-int state, bas, mytim;
+int state, bas, mytim, polyerr=0;
 opoint_t ocoor;
 point_t coor;
 int myclock;
@@ -148,7 +150,6 @@ double mypow2(double x);
 double mypow8(double x);
 double mypow14(double x);
 double ran2(long *idum) ;
-long seed;
 FILE * mainout, *xyzout;
 char fname[30];
 char outname[30];
@@ -181,7 +182,10 @@ int main(int argc,char** argv){
   int wtupdt_s;
   FILE * outFile;
   FILE * ratFile, *filein;
-  seed = iseed;
+
+  if (seed ==0) {
+      seed = iseed;
+  }
 
   tstepsq=tstep*tstep;
   beadsp2 = beads*beads;
@@ -427,10 +431,10 @@ int main(int argc,char** argv){
 
   /* ---------------start of dynamics loop-------------------------- */
   
-  for (cycle=1;cycle<=T/every;cycle++) { 
+  for (cycle=1;cycle<=T;cycle++) { 
     
     if (me == 0) {
-	printf("Starting cycle %d of %d\n",cycle,T/every);
+	printf("Starting cycle %d of %d\n",cycle,T);
     }
 
     mcount = 0;
@@ -488,199 +492,211 @@ int main(int argc,char** argv){
 	    /* move */
 	    
 	    move();
+
+	    if (!polyerr) {
 	    
-	    ind = dir*beads + bead;
-	    //LINE_STAMP;
-	    GetFromServer_dbl(&Coords_elaps,lat,ind,tempw);
-	    tempw[0] += 1.;
-	    //LINE_STAMP;
-	    PutToServer_dbl(&Coords_elaps,lat,ind,tempw);
-	    
-	    mytim += 1;
-	    myclock += 1;
-
-	    /* stack */
-
-	    if ((mytim-1)%xyzfrq ==0) {
-	      if (verb >= 3) {
-		mainout = fopen(outname,"a");
-		fprintf(mainout,"proc %d: mytim = %d writing to xyz \n",me, mytim);
-		fclose(mainout);
-		wrxyz(mytim-1);
-	      }
-	    }
-
-	    if (tcount%stkfrq == 0) {
-	      stack(lat,dir,bead);
-	    }
-	    
-	    if (wtalg == 1) { /* local wt alg */
-	      if ((tcount + cycle*every)%wtupdt_s == 0) {
-		wtstack(lat,dir,bead);
-	      }
-	    }
-
-	    if (mytim%chkfrq == 0) {
-
-	      /* check */
-
-	      tbas = bascheck();
-
-	      if (tbas + dir == 1) {  /* either tbas = 0, dir = 1 or tbas = 1, dir = 0 */
-	
-		/* basin crossing */
-
 		ind = dir*beads + bead;
 		//LINE_STAMP;
-		GetFromServer_int(&Coords_narr,lat,ind,tempi);
-		tempi[0]++;
+		GetFromServer_dbl(&Coords_elaps,lat,ind,tempw);
+		tempw[0] += 1.;
 		//LINE_STAMP;
-		PutToServer_int(&Coords_narr,lat,ind,tempi);
+		PutToServer_dbl(&Coords_elaps,lat,ind,tempw);
 		
-		if (dir == 1) {
-		  odir = 0;
-		}else{
-		  odir = 1;
-		}
-		if (verb >= 3) {
-		  mainout = fopen(outname,"a");
-		  fprintf(mainout,"Ended traj: dir cross\n");
-		  fclose(mainout);
-		}
-		newreg = whichx(lat,odir,coor);
-		if (wtalg == 1) {
-		  fixwt(lat,dir,odir,bead,newreg); /* transfer weight */
-		} else if (rstart[0] != -1) {
-		  ind = dir*beads + bead;
-		  //LINE_STAMP;
-		  GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
-		  tempw[0] += mytim;  /* add time to stack */
-		  //LINE_STAMP;
-		  PutToServer_dbl(&Coords_tau,lat,ind,tempw);
-		  
-		  //LINE_STAMP;
-		  GetFromServer_int(&Coords_ntau,lat,ind,tempi);
-		  tempi[0] += 1; 
-		  //LINE_STAMP;
-		  PutToServer_int(&Coords_ntau,lat,ind,tempi);
-		  
-		  n1 = rstart[0];
-		  n2 = rstart[1];
-		  
-		  ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
-		  //LINE_STAMP;
-		  GetFromServer_int(&Coords_prob,lat,ind,tempi);
-		  tempi[0]++;
-		  //LINE_STAMP;
-		  PutToServer_int(&Coords_prob,lat,ind,tempi);
-		  
-		  ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
-		  //LINE_STAMP;
-		  GetFromServer_int(&Coords_nprob,lat,ind,tempi);
-		  tempi[0]++;
-		  //LINE_STAMP;
-		  PutToServer_int(&Coords_nprob,lat,ind,tempi);		
-		  
-		  
-		  //nprob[lat][dir][bead][n1][n2]++;
-		  //prob[lat][dir][bead][n1][n2][odir][newreg]++;
-		}
-		if (lat == 1) {
-		  olat =0;
-		} else {
-		  olat =1;
-		}
-		newreg = whichx(olat,odir,coor);
-		ind = dir*beads + bead;
-		//LINE_STAMP;
-		GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-		addpoint(olat,odir,newreg,coor,tempw[0],dir,state);  /* send point to other flux list */
-		endtraj = 1;
-	      } else {  /* check for sec and prim crossings */
+		mytim += 1;
+		myclock += 1;
 		
-		/* sec crossing */
-		oldst = state;
-		gtst(lat,dir);
-		if (state != oldst) {
-		  if (lat == 1) {
-		    olat = 0;
-		  }else{
-		    olat = 1;
-		  }
-		  if (verb >= 3) {
-		    mainout = fopen(outname,"a");
-		    fprintf(mainout,"Adding flux point to %d %d %d\n",olat,dir,state);
-		    fclose(mainout);
-		  }
-		  ind = dir*beads + bead;
-		  //LINE_STAMP;
-		  GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-		  addpoint(olat,dir,state,coor,tempw[0],dir,oldst);
-		}
+		/* stack */
 		
-		/* prim crossing */
-		newreg = which(lat,dir);
-		if (newreg != bead) {
-		  if (wtalg == 1) {
-		    fixwt(lat,dir,dir,bead,newreg); /* fix weight */
-		  } else if (rstart[0] != -1) {
-		    ind = dir*beads + bead;
-		    //LINE_STAMP;
-		    GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
-		    tempw[0] += mytim;  /* add time to stack */
-		    //LINE_STAMP;
-		    PutToServer_dbl(&Coords_tau,lat,ind,tempw);
-		    
-		    //LINE_STAMP;
-		    GetFromServer_int(&Coords_ntau,lat,ind,tempi);
-		    tempi[0] += 1; 
-		    //LINE_STAMP;
-		    PutToServer_int(&Coords_ntau,lat,ind,tempi);
-		    
-		    n1 = rstart[0];
-		    n2 = rstart[1];
-		    
-		    ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
-		    //LINE_STAMP;
-		    GetFromServer_int(&Coords_prob,lat,ind,tempi);
-		    tempi[0]++;
-		    //LINE_STAMP;
-		    PutToServer_int(&Coords_prob,lat,ind,tempi);
-		    
-		    ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
-		    //LINE_STAMP;
-		    GetFromServer_int(&Coords_nprob,lat,ind,tempi);
-		    tempi[0]++;
-		    //LINE_STAMP;
-		    PutToServer_int(&Coords_nprob,lat,ind,tempi);
-		    
-		    //nprob[lat][dir][bead][n1][n2]++;
-		    //prob[lat][dir][bead][n1][n2][dir][newreg]++;
-		  }
-		  endtraj = 1;
-		  if (verb >= 3) {
-		    mainout = fopen(outname,"a");
-		    ind = dir*beads + bead;
-		    fprintf(mainout,"Ended traj: prim cross\n");
-		    fclose(mainout);
-		  }
-		}
-	      }
-	    }
-	    tcount++;
-	    if (tcount%globfrq == 0) {
-		ind = dir*beads + bead;
-		allind[0] = lat;
-		allind[1] = ind;
-		tempi[0] = globfrq + NGA_Read_inc(Coords_count.ga,allind,globfrq);
-		if (tempi[0] > every) {
-		    endtraj = 1;
+		if ((mytim-1)%xyzfrq ==0) {
 		    if (verb >= 3) {
 			mainout = fopen(outname,"a");
-			fprintf(mainout,"Ended traj: count\n");
+			fprintf(mainout,"proc %d: mytim = %d writing to xyz \n",me, mytim);
 			fclose(mainout);
+			wrxyz(mytim-1);
 		    }
 		}
+		
+		if (tcount%stkfrq == 0) {
+		    stack(lat,dir,bead);
+		}
+		
+		if (wtalg == 1) { /* local wt alg */
+		    if ((tcount + cycle*every)%wtupdt_s == 0) {
+			wtstack(lat,dir,bead);
+		    }
+		}
+		
+		if (mytim%chkfrq == 0) {
+		    
+		    /* check */
+		    
+		    tbas = bascheck();
+		    
+		    if (tbas + dir == 1) {  /* either tbas = 0, dir = 1 or tbas = 1, dir = 0 */
+			
+			/* basin crossing */
+			
+			ind = dir*beads + bead;
+			//LINE_STAMP;
+			GetFromServer_int(&Coords_narr,lat,ind,tempi);
+			tempi[0]++;
+			//LINE_STAMP;
+			PutToServer_int(&Coords_narr,lat,ind,tempi);
+			
+			if (dir == 1) {
+			    odir = 0;
+			}else{
+			    odir = 1;
+			}
+			if (verb >= 3) {
+			    mainout = fopen(outname,"a");
+			    fprintf(mainout,"Ended traj: dir cross\n");
+			    fclose(mainout);
+			}
+			newreg = whichx(lat,odir,coor);
+			if (wtalg == 1) {
+			    fixwt(lat,dir,odir,bead,newreg); /* transfer weight */
+			} else if (rstart[0] != -1) {
+			    ind = dir*beads + bead;
+			    //LINE_STAMP;
+			    GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
+			    tempw[0] += mytim;  /* add time to stack */
+			    //LINE_STAMP;
+			    PutToServer_dbl(&Coords_tau,lat,ind,tempw);
+			    
+			    //LINE_STAMP;
+			    GetFromServer_int(&Coords_ntau,lat,ind,tempi);
+			    tempi[0] += 1; 
+			    //LINE_STAMP;
+			    PutToServer_int(&Coords_ntau,lat,ind,tempi);
+			    
+			    n1 = rstart[0];
+			    n2 = rstart[1];
+			    
+			    ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
+			    //LINE_STAMP;
+			    GetFromServer_int(&Coords_prob,lat,ind,tempi);
+			    tempi[0]++;
+			    //LINE_STAMP;
+			    PutToServer_int(&Coords_prob,lat,ind,tempi);
+			    
+			    ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
+			    //LINE_STAMP;
+			    GetFromServer_int(&Coords_nprob,lat,ind,tempi);
+			    tempi[0]++;
+			    //LINE_STAMP;
+			    PutToServer_int(&Coords_nprob,lat,ind,tempi);		
+			    
+			    
+			    //nprob[lat][dir][bead][n1][n2]++;
+			    //prob[lat][dir][bead][n1][n2][odir][newreg]++;
+			}
+			if (lat == 1) {
+			    olat =0;
+			} else {
+			    olat =1;
+			}
+			newreg = whichx(olat,odir,coor);
+			ind = dir*beads + bead;
+			//LINE_STAMP;
+			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+			addpoint(olat,odir,newreg,coor,tempw[0],dir,state);  /* send point to other flux list */
+			endtraj = 1;
+		    } else {  /* check for sec and prim crossings */
+			
+			/* sec crossing */
+			oldst = state;
+			gtst(lat,dir);
+			if (state != oldst) {
+			    if (lat == 1) {
+				olat = 0;
+			    }else{
+				olat = 1;
+			    }
+			    if (verb >= 3) {
+				mainout = fopen(outname,"a");
+				fprintf(mainout,"Adding flux point to %d %d %d\n",olat,dir,state);
+				fclose(mainout);
+			    }
+			    ind = dir*beads + bead;
+			    //LINE_STAMP;
+			    GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+			    addpoint(olat,dir,state,coor,tempw[0],dir,oldst);
+			}
+			
+			/* prim crossing */
+			newreg = which(lat,dir);
+			if (newreg != bead) {
+			    if (wtalg == 1) {
+				fixwt(lat,dir,dir,bead,newreg); /* fix weight */
+			    } else if (rstart[0] != -1) {
+				ind = dir*beads + bead;
+				//LINE_STAMP;
+				GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
+				tempw[0] += mytim;  /* add time to stack */
+				//LINE_STAMP;
+				PutToServer_dbl(&Coords_tau,lat,ind,tempw);
+				
+				//LINE_STAMP;
+				GetFromServer_int(&Coords_ntau,lat,ind,tempi);
+				tempi[0] += 1; 
+				//LINE_STAMP;
+				PutToServer_int(&Coords_ntau,lat,ind,tempi);
+				
+				n1 = rstart[0];
+				n2 = rstart[1];
+				
+				ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
+				//LINE_STAMP;
+				GetFromServer_int(&Coords_prob,lat,ind,tempi);
+				tempi[0]++;
+				//LINE_STAMP;
+				PutToServer_int(&Coords_prob,lat,ind,tempi);
+				
+				ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
+				//LINE_STAMP;
+				GetFromServer_int(&Coords_nprob,lat,ind,tempi);
+				tempi[0]++;
+				//LINE_STAMP;
+				PutToServer_int(&Coords_nprob,lat,ind,tempi);
+				
+				//nprob[lat][dir][bead][n1][n2]++;
+				//prob[lat][dir][bead][n1][n2][dir][newreg]++;
+			    }
+			    endtraj = 1;
+			    if (verb >= 3) {
+				mainout = fopen(outname,"a");
+				ind = dir*beads + bead;
+				fprintf(mainout,"Ended traj: prim cross\n");
+				fclose(mainout);
+			    }
+			}
+		    }
+		}
+		tcount++;
+		if (tcount%globfrq == 0) {
+		    ind = dir*beads + bead;
+		    allind[0] = lat;
+		    allind[1] = ind;
+		    tempi[0] = globfrq + NGA_Read_inc(Coords_count.ga,allind,globfrq);
+		    if (tempi[0] > every) {
+			endtraj = 1;
+			if (verb >= 3) {
+			    mainout = fopen(outname,"a");
+			    fprintf(mainout,"Ended traj: count\n");
+			    fclose(mainout);
+			}
+			/* write coordinates to fluxlist */
+			ind = dir*beads + bead;
+			//LINE_STAMP;                                                                                                                                                     
+			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+			addpoint(lat,dir,bead,coor,tempw[0],dir,bead);
+			
+		    }
+		}
+	    } else {   /* if polyerr */
+		endtraj = 1;
+		polyerr = 0;
 	    }
 	}  /* end of trajectory loop */
 	ind = dir*beads + bead;
@@ -801,19 +817,22 @@ int main(int argc,char** argv){
   if (me == 0) {
       t2 = MPI_Wtime();
       printf("total time of dynamics steps: %f\n",t2-t1); fflush(stdout);
+      printf("total time of locking steps: %f\n",globtim); fflush(stdout);
+      printf("total number of locking steps: %d\n",nglobtim); fflush(stdout);
+      printf("time per locking step: %f\n",globtim/(float)nglobtim); fflush(stdout);
 
   /* write weights */
 
-    sprintf(outname,"%s","fwts.dat");
-    outFile = fopen(outname,"w");
-    for (i=0;i<=1;i++) {
-      for (j=0; j<=1; j++) {
-	for (k=0; k<=beads-1; k++) {
-	  fprintf(outFile,"%e\n",weight[i][j][k]);
-	}
+      sprintf(outname,"%s","fwts.dat");
+      outFile = fopen(outname,"w");
+      for (i=0;i<=1;i++) {
+	  for (j=0; j<=1; j++) {
+	      for (k=0; k<=beads-1; k++) {
+		  fprintf(outFile,"%e\n",weight[i][j][k]);
+	      }
+	  }
       }
-    }
-    fclose(outFile);
+      fclose(outFile);
 
     /* write fluxes */
   
@@ -876,7 +895,7 @@ int main(int argc,char** argv){
   }
   
   /* check point */
-  printf("proc %d: final check\n",me); fflush(stdout);
+//  printf("proc %d: final check\n",me); fflush(stdout);
   GA_Sync();
 
   status = DestroyCoordServer(&Coords_wavg);
@@ -929,7 +948,7 @@ void back (int lat, int dir, int bead) {
      to a saved point, or if none exist, to the position
      of the bead (guestimating for undefined coordinates) */
   
-  double sum, a, ttwlist, tempw[1], oran;
+  double sum, a, ttwlist, tempw[1], oran, t1, t2;
   int i, j, newreg, bascheck(int lat, int dir, int bead), ind, limit, k;
   int tnlist, tfull, part, dim, good, lockind;
   point_t point;
@@ -941,7 +960,15 @@ void back (int lat, int dir, int bead) {
 
     lockind = lat*2*beads + dir*beads + bead;
     //LINE_STAMP;
+    if (me==0) {
+	t1 = MPI_Wtime();
+    }
     GA_Lock(lockind);
+    if (me==0) {
+	t2 = MPI_Wtime();
+	globtim += t2-t1;
+	nglobtim++;
+    }
     
     ind = dir*beads + bead;
     //LINE_STAMP;
@@ -1722,14 +1749,21 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
      along with the weight 'wt' */
   
   int tgt, n, i, ind, tfull, wind, part, dim, ptind, lockind;
-  double tw[1], ttw[1], tempw[1];
+  double tw[1], ttw[1], tempw[1], t1,t2;
   
   // printf("proc %d: adding point to [%d,%d,%d] w = %e\n",me,lat,dir,bead,wt); fflush(stdout);
 
   lockind = lat*2*beads + dir*beads + bead;
   //LINE_STAMP;
+  if (me==0) {
+	t1 = MPI_Wtime();
+    }
   GA_Lock(lockind);
-  
+  if (me==0) {
+      t2 = MPI_Wtime();
+      globtim += t2-t1;
+      nglobtim++;
+  }
   GA_Init_fence();
   ind = dir*beads + bead;
   
@@ -3056,7 +3090,7 @@ void stream() {
 void dorotate() {
 
     double deltax[ndim], rho, psi, temp1, rndvec[ndim], odisp[ndim], rnd[3];
-    int i, j, k, l, m, n, good, rr, ind, ii, err, errj, errk, errl;
+    int i, j, k, l, m, n, good, rr, ind, ii, err, errj, errk, errl, erri;
     double temp4, lim, lim2;
     xpoint_t distchg(double odisp[3], double rndvec[3], int rr), ndisp;
     FILE *filein;
@@ -3139,218 +3173,200 @@ void dorotate() {
 	    pos_poly[i][0]=(int)(blinv*coor.x[i][0]-deltax[0])+1;
 	} else {
 	    pos_poly[i][0]=0;
-	    if (pos_poly[i][0] < 0) {
+	    if ((pos_poly[i][0] < 0) || (pos_poly[i][0] >= nx)) {
 		err = 1;
+		erri = i;
 	    }
 	}
 	if(coor.x[i][1]>deltax[1]){
 	    pos_poly[i][1]=(int)(blinv*coor.x[i][1]-deltax[1])+1;
 	} else {    
 	    pos_poly[i][1]=0;
-	    if (pos_poly[i][1] < 0) {
+	    if ((pos_poly[i][1] < 0) || (pos_poly[i][1] >=ny)) {
 		err = 1;
+		erri = i;
 	    }
 	}
 	if(coor.x[i][2]>deltax[2]){
 	    pos_poly[i][2]=(int)(blinv*coor.x[i][2]-deltax[2])+1;
 	} else {
 	    pos_poly[i][2]=0;
-	    if (pos_poly[i][2] < 0) {
+	    if ((pos_poly[i][2] < 0) || (pos_poly[i][2] >=nz)) {
 		err = 1;
+		erri = i;
 	    }
 	}
     } /* end of parallel region */
     
     if (err) {
-	printf("Polymer outside of box! x[%d] = (%e,%e,%e)\n",i,pos_poly[i][0],pos_poly[i][1],pos_poly[i][2]);	      
-	gaexit(2);
+	printf("Polymer outside of box! x[%d] = (%e,%e,%e)\n",erri,pos_poly[erri][0],pos_poly[erri][1],pos_poly[erri][2]);	      
+	polyerr = 1;
     }
 
+    if (!polyerr) {
 
     /*-------------------------How many particles are in each box-------------------------------*/
  
-    err = 0;
+	err = 0;
 #pragma omp parallel default(shared) private(i,j,k,l)
-    {
+	{
 #pragma omp for schedule(static) nowait
-	for(j=0;j<nx;j++){
-	    for(k=0;k<ny;k++){
-		for(l=0;l<nz;l++){
-		    v_cmax[j][k][l]=0.;
-		    v_cmay[j][k][l]=0.;
-		    v_cmaz[j][k][l]=0.;
-		    box[j][k][l]=0;	
-		    box_poly[j][k][l]=0;
+	    for(j=0;j<nx;j++){
+		for(k=0;k<ny;k++){
+		    for(l=0;l<nz;l++){
+			v_cmax[j][k][l]=0.;
+			v_cmay[j][k][l]=0.;
+			v_cmaz[j][k][l]=0.;
+			box[j][k][l]=0;	
+			box_poly[j][k][l]=0;
+		    }
+		}
+	    }
+	
+#pragma omp for schedule(static)
+	    for(i=0;i<N;i++){
+		j = pos[i][0];
+		k = pos[i][1];
+		l = pos[i][2];
+		if ((((j<0) || (j>=nx)) || ((k<0) || (k>=ny))) || ((l<0) || (l>=nz))) {
+		    err = 1;
+		}
+		if (!err) {
+		    box[j][k][l]++;
+		}
+	    }
+	} /* end of parallel region */
+	
+	if (err) {
+	    printf("Solvent outside of box! %d %d %d %d\n",i,j,k,l);
+	    gaexit(2);
+	}
+	
+	/*Fill up boxes at y=0 and with fake velocities*/
+	
+#pragma omp parallel for default(shared) private(i,k,temp4) schedule(static)      
+	for(i=0;i<nx;i++){
+	    for(k=0;k<nz;k++){
+		while ((int)n_av>box[i][0][k]) {
+		    box[i][0][k]++;
+		    
+		    temp4=sqrt(-var*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
+		    v_cmax[i][0][k]+=solvmass*temp4;
+		    
+		    temp4=sqrt(-var*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
+		    v_cmay[i][0][k]+=solvmass*temp4;
+		    
+		    temp4=sqrt(-var*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
+		    v_cmaz[i][0][k]+=solvmass*temp4;
 		}
 	    }
 	}
 	
-#pragma omp for schedule(static)
-	for(i=0;i<N;i++){
-	    j = pos[i][0];
-	    k = pos[i][1];
-	    l = pos[i][2];
-	    if ((((j<0) || (j>=nx)) || ((k<0) || (k>=ny))) || ((l<0) || (l>=nz))) {
-		err = 1;
-	    }
-	    if (!err) {
-		box[j][k][l]++;
-	    }
-	}
-    } /* end of parallel region */
-
-    if (err) {
-	printf("Solvent outside of box! %d %d %d %d\n",i,j,k,l);
-	gaexit(2);
-    }
-    
-    /*Fill up boxes at y=0 and with fake velocities*/
-
-#pragma omp parallel for default(shared) private(i,k,temp4) schedule(static)      
-    for(i=0;i<nx;i++){
-	for(k=0;k<nz;k++){
-	    while ((int)n_av>box[i][0][k]) {
-		box[i][0][k]++;
-		
-		temp4=sqrt(-var*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
-		v_cmax[i][0][k]+=solvmass*temp4;
-		
-		temp4=sqrt(-var*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
-		v_cmay[i][0][k]+=solvmass*temp4;
-		
-		temp4=sqrt(-var*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
-		v_cmaz[i][0][k]+=solvmass*temp4;
-	    }
-	}
-    }
-    
-    /*---------------------How many polymer beads are in each box------------------------------*/
-      
-    err = 0;
-#pragma omp parallel for default(shared) private(i,j,k,l) schedule(static)      
-    for(i=0;i<npart;i++){
-	j=pos_poly[i][0];
-	k=pos_poly[i][1];
-	l=pos_poly[i][2];
-	if ((((j<0) || (j>=nx)) || ((k<0) || (k>=ny))) || ((l<0) || (l>=nz))) {
-	    errj = j;
-	    errk = k;
-	    errl = l;
-	    err = 1;
-	}
-	box_poly[j][k][l]++;
-
-    }  /* end of parallel region */
-    if (err) {
-	printf("Polymer outside of box! %d %d %d\n",errj,errk,errl);
-	filein = fopen("fpoly_crash.dat","w");
+	/*---------------------How many polymer beads are in each box------------------------------*/
 	
-	for (j=0; j<npart; j++) {
-	    for (k=0; k<3; k++) {
-		fprintf(filein,"%e ",coor.x[j][k]);
-	    }
-	    for (k=0; k<3; k++) {
-		fprintf(filein,"%e ",coor.v[j][k]);
-	    }
-	    fprintf(filein,"\n");
-	}
-	fclose(filein);	    
-	gaexit(2);
-    }
+#pragma omp parallel for default(shared) private(i,j,k,l) schedule(static)      
+	for(i=0;i<npart;i++){
+	    j=pos_poly[i][0];
+	    k=pos_poly[i][1];
+	    l=pos_poly[i][2];
+	    box_poly[j][k][l]++;
+	    
+	}  /* end of parallel region */
 	
     
 /*-------------------------Calculate Velocity of Center of Mass--------------------------------*/
 
 #pragma omp parallel for default(shared) private(i,j,k,m) schedule(static)      
-    for(m=0;m<N;m++){
-	i=pos[m][0];
-	j=pos[m][1];
-	k=pos[m][2];
-	v_cmax[i][j][k]+=solvmass*vsolv[m][0];
-	v_cmay[i][j][k]+=solvmass*vsolv[m][1];
-	v_cmaz[i][j][k]+=solvmass*vsolv[m][2];
-    }
-      
-#pragma omp parallel for default(shared) private(i,j,k,n) schedule(static)
-    for(n=0;n<npart;n++){
-	i= pos_poly[n][0];
-	j= pos_poly[n][1];
-	k= pos_poly[n][2];
+	for(m=0;m<N;m++){
+	    i=pos[m][0];
+	    j=pos[m][1];
+	    k=pos[m][2];
+	    v_cmax[i][j][k]+=solvmass*vsolv[m][0];
+	    v_cmay[i][j][k]+=solvmass*vsolv[m][1];
+	    v_cmaz[i][j][k]+=solvmass*vsolv[m][2];
+	}
 	
-	v_cmax[i][j][k]+= polymass*coor.v[n][0];
-	v_cmay[i][j][k]+= polymass*coor.v[n][1];
-	v_cmaz[i][j][k]+= polymass*coor.v[n][2];
-    }
-      
+#pragma omp parallel for default(shared) private(i,j,k,n) schedule(static)
+	for(n=0;n<npart;n++){
+	    i= pos_poly[n][0];
+	    j= pos_poly[n][1];
+	    k= pos_poly[n][2];
+	    
+	    v_cmax[i][j][k]+= polymass*coor.v[n][0];
+	    v_cmay[i][j][k]+= polymass*coor.v[n][1];
+	    v_cmaz[i][j][k]+= polymass*coor.v[n][2];
+	}
+	
 #pragma omp parallel for default(shared) private(i,j,k,lim,lim2) schedule(static)      
-    for(i=0;i<nx;i++){
-	for(j=0;j<ny;j++){
-	    for(k=0;k<nz;k++){
-		lim = solvmass*box[i][j][k]+polymass*box_poly[i][j][k];
-		if (lim != 0.) {
-		    lim2 = 1./lim;
-		    v_cmx[i][j][k]=v_cmax[i][j][k]*lim2;
-		    v_cmy[i][j][k]=v_cmay[i][j][k]*lim2;
-		    v_cmz[i][j][k]=v_cmaz[i][j][k]*lim2;
+	for(i=0;i<nx;i++){
+	    for(j=0;j<ny;j++){
+		for(k=0;k<nz;k++){
+		    lim = solvmass*box[i][j][k]+polymass*box_poly[i][j][k];
+		    if (lim != 0.) {
+			lim2 = 1./lim;
+			v_cmx[i][j][k]=v_cmax[i][j][k]*lim2;
+			v_cmy[i][j][k]=v_cmay[i][j][k]*lim2;
+			v_cmz[i][j][k]=v_cmaz[i][j][k]*lim2;
+		    }
 		}
 	    }
 	}
-    }
-      
-/*------------------------------Calculate new velocities------------------------------------------*/	
-	       
-    for(i=0;i<nx;i++){
-	for(j=0;j<ny;j++){
-	    for(k=0;k<nz;k++){
-		if (box[i][j][k]+box_poly[i][j][k] > 0) {
-
-#pragma omp parallel default(shared) private(ii,ind,odisp,ndisp)
-		    {
-#pragma omp for schedule(static)
-			for (ii=0;ii<3;ii++) {
-			    rnd[ii]=ran2(&seed);
-			}
-			rho = 2.*rnd[0] - 1.;
-			psi=twoPi*rnd[1];               /*rotation angle*/
-			temp1 = sqrt(1.-mypow2(rho));
-			rndvec[0] = cos(psi)*temp1;
-			rndvec[1] = sin(psi)*temp1;
-			rndvec[2] = rho;
-			if (rnd[2] > 0.5) {
-			    rr = 0;
-			} else {
-			    rr = 1;
-			}
 	
-			// solvents
-
-#pragma omp for schedule(static)	      
-			for (ii=0;ii<nlab[i][j][k];ii++) {
-			    ind = lab[i][j][k][ii];
-			    odisp[0] = vsolv[ind][0] - v_cmx[i][j][k];
-			    odisp[1] = vsolv[ind][1] - v_cmy[i][j][k];
-			    odisp[2] = vsolv[ind][2] - v_cmz[i][j][k];
-			    ndisp = distchg(odisp,rndvec,rr);
-			    vsolv[ind][0] = v_cmx[i][j][k] + ndisp.x[0];
-			    vsolv[ind][1] = v_cmy[i][j][k] + ndisp.x[1];
-			    vsolv[ind][2] = v_cmz[i][j][k] + ndisp.x[2];
-			}
-		    
-			// polymer beads
-
-#pragma omp for schedule(static)	      
-			for (ind=0;ind<npart;ind++) {
-			    if (((pos_poly[ind][0]==i)&&(pos_poly[ind][1]==j))&&(pos_poly[ind][2]==k)) {
-				odisp[0] = coor.v[ind][0] - v_cmx[i][j][k];
-				odisp[1] = coor.v[ind][1] - v_cmy[i][j][k];
-				odisp[2] = coor.v[ind][2] - v_cmz[i][j][k];
-				ndisp = distchg(odisp,rndvec,rr);
-				coor.v[ind][0] = v_cmx[i][j][k] + ndisp.x[0];
-				coor.v[ind][1] = v_cmy[i][j][k] + ndisp.x[1];
-				coor.v[ind][2] = v_cmz[i][j][k] + ndisp.x[2];
+/*------------------------------Calculate new velocities------------------------------------------*/	
+	
+	for(i=0;i<nx;i++){
+	    for(j=0;j<ny;j++){
+		for(k=0;k<nz;k++){
+		    if (box[i][j][k]+box_poly[i][j][k] > 0) {
+			
+#pragma omp parallel default(shared) private(ii,ind,odisp,ndisp)
+			{
+#pragma omp for schedule(static)
+			    for (ii=0;ii<3;ii++) {
+				rnd[ii]=ran2(&seed);
 			    }
-			}
-		    } /* end of parallel region */
+			    rho = 2.*rnd[0] - 1.;
+			    psi=twoPi*rnd[1];               /*rotation angle*/
+			    temp1 = sqrt(1.-mypow2(rho));
+			    rndvec[0] = cos(psi)*temp1;
+			    rndvec[1] = sin(psi)*temp1;
+			    rndvec[2] = rho;
+			    if (rnd[2] > 0.5) {
+				rr = 0;
+			    } else {
+				rr = 1;
+			    }
+			    
+			    // solvents
+			    
+#pragma omp for schedule(static)	      
+			    for (ii=0;ii<nlab[i][j][k];ii++) {
+				ind = lab[i][j][k][ii];
+				odisp[0] = vsolv[ind][0] - v_cmx[i][j][k];
+				odisp[1] = vsolv[ind][1] - v_cmy[i][j][k];
+				odisp[2] = vsolv[ind][2] - v_cmz[i][j][k];
+				ndisp = distchg(odisp,rndvec,rr);
+				vsolv[ind][0] = v_cmx[i][j][k] + ndisp.x[0];
+				vsolv[ind][1] = v_cmy[i][j][k] + ndisp.x[1];
+				vsolv[ind][2] = v_cmz[i][j][k] + ndisp.x[2];
+			    }
+			    
+			    // polymer beads
+			    
+#pragma omp for schedule(static)	      
+			    for (ind=0;ind<npart;ind++) {
+				if (((pos_poly[ind][0]==i)&&(pos_poly[ind][1]==j))&&(pos_poly[ind][2]==k)) {
+				    odisp[0] = coor.v[ind][0] - v_cmx[i][j][k];
+				    odisp[1] = coor.v[ind][1] - v_cmy[i][j][k];
+				    odisp[2] = coor.v[ind][2] - v_cmz[i][j][k];
+				    ndisp = distchg(odisp,rndvec,rr);
+				    coor.v[ind][0] = v_cmx[i][j][k] + ndisp.x[0];
+				    coor.v[ind][1] = v_cmy[i][j][k] + ndisp.x[1];
+				    coor.v[ind][2] = v_cmz[i][j][k] + ndisp.x[2];
+				}
+			    }
+			} /* end of parallel region */
+		    }
 		}
 	    }
 	}
