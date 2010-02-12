@@ -25,16 +25,16 @@
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   GA_PREFIX=/home/projects/nwchem/ga-cvs-dev
+   GA_PREFIX=/home/jhammond/ga-cvs-dev
    GA_INC=-I$(GA_PREFIX)/include
    GA_LIB=-L$(GA_PREFIX)/lib/BGP -lglobal -lma -larmci -ltcgmsg-mpi -llinalg
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   OMP_FLAGS=-qsmp=omp
+   OMPI_FLAGS=-qsmp=omp
 
-   LIB=$(GA_LIB) $(EXTRAS)
-   INC=$(GA_INC)
+   LIB=$(GA_LIB) $(MPI_LIB) $(EXTRAS)
+   INC=$(GA_INC) $(MPI_INC)
 
    CC=mpixlc_r
    CFLAGS=-g $(INC) $(OMPI_FLAGS)
