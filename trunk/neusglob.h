@@ -5,6 +5,7 @@
 #define NPART_c 262 
 #define NEMERG_c 385
 
+long seed = 1;
 const int phase = 2;
 const int wtalg = 1;       /* 1 = local ; 2 = global */
 const char flname[30] = "NOREAD";
@@ -12,20 +13,20 @@ const char wname[30] = "NOREAD";
 const char fxname[30] = "NOREAD";
 
 const int beads = 30;
-const int wtupdt = 100000;
-const int T = 200000;         /* measured in number of steps */
-const int every = 200000;
+const int wtupdt = 800000;
+const int T = 300;         /* measured in number of cycles */
+const int every = 800000;
 const int stkfrq = 1000;
-const int wrfrq = 200000;
+const int wrfrq = 800000;
 const int xyzfrq = 1000;
 const int chkfrq = 1000;  
-const int globfrq = 100;  
-const int tres = 100;
+const int globfrq = 1000;  
+const int tres = 1000;
 const int nemerg = NEMERG_c;
 const double tmin = 100.;
 const double tmax = 400.;
 
-const double s = 5.e-2;
+const double s = 1.e-2;
 const double frac = 0.1;
 const double wfrac = 1.0;
 const double kappa = 0.1;
