@@ -25,7 +25,7 @@
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   GA_PREFIX=/home/jhammond/ga-cvs-dev
+   GA_PREFIX=/gpfs/home/projects/nwchem/ga-alex
    GA_INC=-I$(GA_PREFIX)/include
    GA_LIB=-L$(GA_PREFIX)/lib/BGP -lglobal -lma -larmci -ltcgmsg-mpi -llinalg
 

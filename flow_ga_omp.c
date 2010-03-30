@@ -83,7 +83,7 @@ double globtim=0.;
 int nglobtim=0;
 int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2;
 int *tnwstack1, *tnwstack2;
-int verb=2;
+int verb=3;
 int me, nproc, status, beadsp2, beadsp3;
 double tstepsq;
 
@@ -124,6 +124,7 @@ int myclock;
 point_t ptconv(int lat, int dir, int bead);
 opoint_t ptavg(opoint_t x, opoint_t y);
 opoint_t projx(point_t x);
+int bascheck();
 int which(int lat, int dir);
 int whichx(int lat, int dir, point_t x);
 void gaexit(int sig);
@@ -495,12 +496,10 @@ int main(int argc,char** argv){
 
 	    if (!polyerr) {
 	    
-		ind = dir*beads + bead;
 		//LINE_STAMP;
-		GetFromServer_dbl(&Coords_elaps,lat,ind,tempw);
-		tempw[0] += 1.;
-		//LINE_STAMP;
-		PutToServer_dbl(&Coords_elaps,lat,ind,tempw);
+	      allind[0] = lat;
+	      allind[1] = dir*beads + bead;
+	      tempw[0] = 1. + NGA_Read_inc(Coords_elaps.ga,allind,1.);
 		
 		mytim += 1;
 		myclock += 1;
@@ -533,68 +532,49 @@ int main(int argc,char** argv){
 		    tbas = bascheck();
 		    
 		    if (tbas + dir == 1) {  /* either tbas = 0, dir = 1 or tbas = 1, dir = 0 */
-			
+		      
 			/* basin crossing */
 			
-			ind = dir*beads + bead;
-			//LINE_STAMP;
-			GetFromServer_int(&Coords_narr,lat,ind,tempi);
-			tempi[0]++;
-			//LINE_STAMP;
-			PutToServer_int(&Coords_narr,lat,ind,tempi);
+		      allind[0] = lat;
+		      allind[1] = dir*beads + bead;
+		      tempi[0] = 1 + NGA_Read_inc(Coords_narr.ga,allind,1);
 			
 			if (dir == 1) {
-			    odir = 0;
+			  odir = 0;
 			}else{
-			    odir = 1;
+			  odir = 1;
 			}
 			if (verb >= 3) {
-			    mainout = fopen(outname,"a");
-			    fprintf(mainout,"Ended traj: dir cross\n");
-			    fclose(mainout);
+			  mainout = fopen(outname,"a");
+			  fprintf(mainout,"Ended traj: dir cross\n");
+			  fclose(mainout);
 			}
 			newreg = whichx(lat,odir,coor);
 			if (wtalg == 1) {
-			    fixwt(lat,dir,odir,bead,newreg); /* transfer weight */
+			  fixwt(lat,dir,odir,bead,newreg); /* transfer weight */
 			} else if (rstart[0] != -1) {
-			    ind = dir*beads + bead;
-			    //LINE_STAMP;
-			    GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
-			    tempw[0] += mytim;  /* add time to stack */
-			    //LINE_STAMP;
-			    PutToServer_dbl(&Coords_tau,lat,ind,tempw);
-			    
-			    //LINE_STAMP;
-			    GetFromServer_int(&Coords_ntau,lat,ind,tempi);
-			    tempi[0] += 1; 
-			    //LINE_STAMP;
-			    PutToServer_int(&Coords_ntau,lat,ind,tempi);
-			    
-			    n1 = rstart[0];
-			    n2 = rstart[1];
-			    
-			    ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
-			    //LINE_STAMP;
-			    GetFromServer_int(&Coords_prob,lat,ind,tempi);
-			    tempi[0]++;
-			    //LINE_STAMP;
-			    PutToServer_int(&Coords_prob,lat,ind,tempi);
-			    
-			    ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
-			    //LINE_STAMP;
-			    GetFromServer_int(&Coords_nprob,lat,ind,tempi);
-			    tempi[0]++;
-			    //LINE_STAMP;
-			    PutToServer_int(&Coords_nprob,lat,ind,tempi);		
-			    
-			    
-			    //nprob[lat][dir][bead][n1][n2]++;
-			    //prob[lat][dir][bead][n1][n2][odir][newreg]++;
+			  allind[0] = lat;
+			  allind[1] = dir*beads + bead;
+			  tempw[0] = mytim + NGA_Read_inc(Coords_tau.ga,allind,mytim);
+			  tempi[0] = 1 + NGA_Read_inc(Coords_ntau.ga,allind,1);
+			  
+			  n1 = rstart[0];
+			  n2 = rstart[1];
+
+			  allind[0] = lat;
+			  allind[1] = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
+			  tempi[0] = 1 + NGA_Read_inc(Coords_prob.ga,allind,1);			  
+			  
+			  allind[1] = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
+			  tempi[0] = 1 + NGA_Read_inc(Coords_nprob.ga,allind,1);
+			  
+			  //nprob[lat][dir][bead][n1][n2]++;
+			  //prob[lat][dir][bead][n1][n2][odir][newreg]++;
 			}
 			if (lat == 1) {
-			    olat =0;
+			  olat =0;
 			} else {
-			    olat =1;
+			  olat =1;
 			}
 			newreg = whichx(olat,odir,coor);
 			ind = dir*beads + bead;
@@ -603,74 +583,58 @@ int main(int argc,char** argv){
 			addpoint(olat,odir,newreg,coor,tempw[0],dir,state);  /* send point to other flux list */
 			endtraj = 1;
 		    } else {  /* check for sec and prim crossings */
-			
-			/* sec crossing */
-			oldst = state;
-			gtst(lat,dir);
-			if (state != oldst) {
-			    if (lat == 1) {
-				olat = 0;
-			    }else{
-				olat = 1;
-			    }
-			    if (verb >= 3) {
-				mainout = fopen(outname,"a");
-				fprintf(mainout,"Adding flux point to %d %d %d\n",olat,dir,state);
-				fclose(mainout);
-			    }
-			    ind = dir*beads + bead;
-			    //LINE_STAMP;
-			    GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-			    addpoint(olat,dir,state,coor,tempw[0],dir,oldst);
+		      
+		      /* sec crossing */
+		      oldst = state;
+		      gtst(lat,dir);
+		      if (state != oldst) {
+			if (lat == 1) {
+			  olat = 0;
+			}else{
+			  olat = 1;
 			}
-			
-			/* prim crossing */
-			newreg = which(lat,dir);
-			if (newreg != bead) {
-			    if (wtalg == 1) {
-				fixwt(lat,dir,dir,bead,newreg); /* fix weight */
-			    } else if (rstart[0] != -1) {
-				ind = dir*beads + bead;
-				//LINE_STAMP;
-				GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
-				tempw[0] += mytim;  /* add time to stack */
-				//LINE_STAMP;
-				PutToServer_dbl(&Coords_tau,lat,ind,tempw);
-				
-				//LINE_STAMP;
-				GetFromServer_int(&Coords_ntau,lat,ind,tempi);
-				tempi[0] += 1; 
-				//LINE_STAMP;
-				PutToServer_int(&Coords_ntau,lat,ind,tempi);
-				
-				n1 = rstart[0];
-				n2 = rstart[1];
-				
-				ind = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
-				//LINE_STAMP;
-				GetFromServer_int(&Coords_prob,lat,ind,tempi);
-				tempi[0]++;
-				//LINE_STAMP;
-				PutToServer_int(&Coords_prob,lat,ind,tempi);
-				
-				ind = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
-				//LINE_STAMP;
-				GetFromServer_int(&Coords_nprob,lat,ind,tempi);
-				tempi[0]++;
-				//LINE_STAMP;
-				PutToServer_int(&Coords_nprob,lat,ind,tempi);
-				
-				//nprob[lat][dir][bead][n1][n2]++;
-				//prob[lat][dir][bead][n1][n2][dir][newreg]++;
-			    }
-			    endtraj = 1;
-			    if (verb >= 3) {
-				mainout = fopen(outname,"a");
-				ind = dir*beads + bead;
-				fprintf(mainout,"Ended traj: prim cross\n");
-				fclose(mainout);
-			    }
+			if (verb >= 3) {
+			  mainout = fopen(outname,"a");
+			  fprintf(mainout,"Adding flux point to %d %d %d\n",olat,dir,state);
+			  fclose(mainout);
 			}
+			ind = dir*beads + bead;
+			//LINE_STAMP;
+			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+			addpoint(olat,dir,state,coor,tempw[0],dir,oldst);
+		      }
+			
+		      /* prim crossing */
+		      newreg = which(lat,dir);
+		      if (newreg != bead) {
+			if (wtalg == 1) {
+			  fixwt(lat,dir,dir,bead,newreg); /* fix weight */
+			} else if (rstart[0] != -1) {
+			  allind[0] = lat;
+			  allind[1] = dir*beads + bead;
+			  tempw[0] = mytim + NGA_Read_inc(Coords_tau.ga,allind,mytim); //add time to stack
+			  tempi[0] = 1 + NGA_Read_inc(Coords_ntau.ga,allind,1); 
+			  
+			  n1 = rstart[0];
+			  n2 = rstart[1];
+			  
+			  allind[1] = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
+			  tempi[0] = 1 + NGA_Read_inc(Coords_prob.ga,allind,1); 
+
+			  allind[1] = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
+			  tempi[0] = 1 + NGA_Read_inc(Coords_nprob.ga,allind,1); 
+			  
+			  //nprob[lat][dir][bead][n1][n2]++;
+			  //prob[lat][dir][bead][n1][n2][dir][newreg]++;
+			}
+			endtraj = 1;
+			if (verb >= 3) {
+			  mainout = fopen(outname,"a");
+			  ind = dir*beads + bead;
+			  fprintf(mainout,"Ended traj: prim cross\n");
+			  fclose(mainout);
+			}
+		      }
 		    }
 		}
 		tcount++;
@@ -686,12 +650,19 @@ int main(int argc,char** argv){
 			    fprintf(mainout,"Ended traj: count\n");
 			    fclose(mainout);
 			}
-			/* write coordinates to fluxlist */
+			/* write coordinates to (someone's) fluxlist */
 			ind = dir*beads + bead;
-			//LINE_STAMP;                                                                                                                                                     
+			//LINE_STAMP;                                    
 			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-			addpoint(lat,dir,bead,coor,tempw[0],dir,bead);
-			
+
+			tbas = bascheck();
+			if (tbas+dir == 1) {
+			  newreg = which(lat,tbas);
+			  addpoint(lat,tbas,newreg,coor,tempw[0],-1,-1);
+			} else {
+			  newreg = which(lat,dir);
+			  addpoint(lat,dir,newreg,coor,tempw[0],-1,-1);
+			}
 		    }
 		}
 	    } else {   /* if polyerr */
@@ -949,26 +920,27 @@ void back (int lat, int dir, int bead) {
      of the bead (guestimating for undefined coordinates) */
   
   double sum, a, ttwlist, tempw[1], oran, t1, t2;
-  int i, j, newreg, bascheck(int lat, int dir, int bead), ind, limit, k;
+  int i, j, newreg, ind, limit, k;
   int tnlist, tfull, part, dim, good, lockind;
   point_t point;
   FILE *filein;
 
+
+  lockind = lat*2*beads + dir*beads + bead;
+  //LINE_STAMP;
+  if (me==0) {
+    t1 = MPI_Wtime();
+  }
+  GA_Lock(lockind);
+  if (me==0) {
+    t2 = MPI_Wtime();
+    globtim += t2-t1;
+    nglobtim++;
+  }
+
   good = 0;
   while (!good) {
     good = 1;
-
-    lockind = lat*2*beads + dir*beads + bead;
-    //LINE_STAMP;
-    if (me==0) {
-	t1 = MPI_Wtime();
-    }
-    GA_Lock(lockind);
-    if (me==0) {
-	t2 = MPI_Wtime();
-	globtim += t2-t1;
-	nglobtim++;
-    }
     
     ind = dir*beads + bead;
     //LINE_STAMP;
@@ -1103,7 +1075,6 @@ void back (int lat, int dir, int bead) {
       coor = ptconv(lat,dir,bead);
     }
     
-    GA_Unlock(lockind);
     
     /* get ocoor, state, bas, check the validity of the point */
     
@@ -1111,7 +1082,7 @@ void back (int lat, int dir, int bead) {
     
     gtst(lat,dir);
     
-    bas = bascheck(lat,dir,bead);
+    bas = bascheck();
     if (dir + bas == 1) {
       printf("proc %d:  Error! Started in opposite basin!\n",me);
       if (j == 0) {
@@ -1130,17 +1101,33 @@ void back (int lat, int dir, int bead) {
     mytim = 0;
     newreg = which(lat,dir);
     if (newreg != bead) {
-	if (verb >= 2) {
-	    printf("proc %d:  Error:  Replica reinitialized in wrong region!\n",me);
-	    printf("which(%d,%d) = %d\n", lat, dir, newreg);
-	    printf("opoint: %e %e\n",ocoor.x[0],ocoor.x[1]);
-	    printf("rank is %d; j is %d; lat,dir,bead are (%d,%d,%d) \n", me, j, lat,dir,bead);
-	    printf("tnlist: %d, oran: %e\n",tnlist,oran);
-	    good = 0;
+      if (verb >= 2) {
+	printf("proc %d:  Error:  Replica reinitialized in wrong region!\n",me);
+	printf("which(%d,%d) = %d\n", lat, dir, newreg);
+	printf("opoint: %e %e %e\n",ocoor.x[0],z[lat][dir][bead],z[lat][dir][newreg]);
+	printf("rank is %d; j is %d; lat,dir,bead are (%d,%d,%d) \n", me, j, lat,dir,bead);
+	printf("tnlist: %d, oran: %e\n",tnlist,oran);
+	printf("from: %d %d\n",rstart[0],rstart[1]);
+	printf("deleting point %d\n",j-2);
+	if (j >= 2) {
+	  if (tfull) {
+	    globn = mxlist;
+	  } else {
+	    globn = tnlist;
+	  }
+	  delpoint(lat,dir,bead,j-2);
+	  ind = dir*beads + bead;
+	  tempi[0] = globn;
+	  PutToServer_int(&Coords_nlist,lat,ind,tempi);
+	  tempi[0] = 0;
+	  PutToServer_int(&Coords_full,lat,ind,tempi);
 	}
-      //      gaexit(96);
+	good = 0;
+      }
+	//  gaexit(96);
     }
   }
+  GA_Unlock(lockind);
 }
 /*-------------------------------------------------------------------------*/
  void fixwt(int lat, int dir1, int dir2, int reg1, int reg2) {
@@ -1165,12 +1152,10 @@ void back (int lat, int dir, int bead) {
    w[0] -= temp;
    //LINE_STAMP;
    PutToServer_dbl(&Coords_wadj,lat,i,w);
-   
-   //LINE_STAMP;
-   GetFromServer_dbl(&Coords_wadj,lat,i2,w);
-   w[0] += temp;
-   //LINE_STAMP;
-   PutToServer_dbl(&Coords_wadj,lat,i2,w);
+
+   allind[0] = lat;
+   allind[1] = i2;
+   w[0] = temp + NGA_Read_inc(Coords_wadj.ga,allind,temp);
  }
 /*-------------------------------------------------------------------------*/
 void wtstack(int lat, int dir, int bead) {
@@ -1186,16 +1171,12 @@ void wtstack(int lat, int dir, int bead) {
   }
 
   //LINE_STAMP;
-  GetFromServer_dbl(&Coords_wavg,lat,i,tempwavg);
-  //LINE_STAMP;
   GetFromServer_dbl(&Coords_wadj,lat,i,tempwadj);
-  tempwavg[0] += tempwadj[0];
-  //LINE_STAMP;
-  PutToServer_dbl(&Coords_wavg,lat,i,tempwavg);
-  GetFromServer_int(&Coords_nwstack,lat,i,tempi);
-  tempi[0]++;
-  PutToServer_int(&Coords_nwstack,lat,i,tempi);
 
+  allind[0] = lat;
+  allind[1] = i;
+  tempwavg[0] = tempwadj[0] + NGA_Read_inc(Coords_wavg.ga,allind,tempwadj[0]);
+  tempi[0] = 1 + NGA_Read_inc(Coords_nwstack.ga,allind,1);
 }
 /*-------------------------------------------------------------------------*/
 void updtwts(int ind) {
@@ -1756,22 +1737,20 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   lockind = lat*2*beads + dir*beads + bead;
   //LINE_STAMP;
   if (me==0) {
-	t1 = MPI_Wtime();
-    }
+    t1 = MPI_Wtime();
+  }
   GA_Lock(lockind);
   if (me==0) {
-      t2 = MPI_Wtime();
-      globtim += t2-t1;
-      nglobtim++;
+    t2 = MPI_Wtime();
+    globtim += t2-t1;
+    nglobtim++;
   }
   GA_Init_fence();
   ind = dir*beads + bead;
   
-  //LINE_STAMP;
-  GetFromServer_int(&Coords_nlist,lat,ind,tempi);
-  tempi[0]++;
-  //LINE_STAMP;
-  PutToServer_int(&Coords_nlist,lat,ind,tempi);
+  allind[0] = lat;
+  allind[1] = ind;
+  tempi[0] = 1 + NGA_Read_inc(Coords_nlist.ga,allind,1);
 
   //LINE_STAMP;
   GetFromServer_int(&Coords_full,lat,ind,tempi);  
@@ -1798,10 +1777,10 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
     //LINE_STAMP;
     GetFromServer_dbl(&Coords_wlist,lat,wind,tw);
     //LINE_STAMP;
-    GetFromServer_dbl(&Coords_twlist,lat,ind,ttw);
-    ttw[0] -= tw[0];
-    //LINE_STAMP;
-    PutToServer_dbl(&Coords_twlist,lat,ind,ttw);
+    allind[0] = lat;
+    allind[1] = ind;
+    ttw[0] = -tw[0] + NGA_Read_inc(Coords_twlist.ga,allind,-tw[0]);
+    
     //    flist[lat][dir][bead].twlist -= flist[lat][dir][bead].wlist[n];
   }
   
@@ -1814,11 +1793,9 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   PutToServer_dbl(&Coords_wlist,lat,wind,tw);
   //flist[lat][dir][bead].wlist[n] = wt;
 
-  //LINE_STAMP;
-  GetFromServer_dbl(&Coords_twlist,lat,ind,ttw);
-  ttw[0] += wt;
-  //LINE_STAMP;
-  PutToServer_dbl(&Coords_twlist,lat,ind,ttw);
+  allind[0] = lat;
+  allind[1] = ind;
+  ttw[0] = wt + NGA_Read_inc(Coords_twlist.ga,allind,wt);
   //flist[lat][dir][bead].twlist += wt;
 
   for (part=0; part<npart;part++) {
@@ -1909,19 +1886,14 @@ opoint_t ptavg(opoint_t x, opoint_t y) {
    if (phase==1) {
      if (lat == 0) {
    
-       //LINE_STAMP;
-       GetFromServer_int(&Coords_navg,dir,bead,tempi);
-       tempi[0]++;
-       //LINE_STAMP;
-       PutToServer_int(&Coords_navg,dir,bead,tempi);
+       allind[0] = dir;
+       allind[1] = bead;
+       tempi[0] = 1 + NGA_Read_inc(Coords_navg.ga,allind,1);
        
        for (j=0;j<=nop-1;j++) {
 	 index = bead*nop + j;
-	 //LINE_STAMP;
-	 GetFromServer_dbl(&Coords_stravg,dir,index,temps);
-	 temps[0] += ocoor.x[j];
-	 //LINE_STAMP;
-	 PutToServer_dbl(&Coords_stravg,dir,index,temps);
+	 allind[1] = index;
+	 temps[0] = ocoor.x[j] + NGA_Read_inc(Coords_stravg.ga,allind,ocoor.x[j]);
        }
      }
    }
@@ -1930,12 +1902,9 @@ opoint_t ptavg(opoint_t x, opoint_t y) {
    if ((index < 0) || (index >= tres)) {
      printf("Error in stack index! %f\n",ocoor.x[0]);
    } else {
-     ind = tres*beads*dir + tres*bead + index;
-     //LINE_STAMP;
-     GetFromServer_int(&Coords_thist,lat,ind,tempi);
-     tempi[0]++;
-     //LINE_STAMP;
-     PutToServer_int(&Coords_thist,lat,ind,tempi);
+     allind[0] = lat;
+     allind[1] = tres*beads*dir + tres*bead + index;
+     tempi[0] = 1 + NGA_Read_inc(Coords_thist.ga,allind,1);
    }
  }
 /*-------------------------------------------------------------------------*/
@@ -2268,21 +2237,18 @@ void delpoint(int lat, int dir, int bead, int pt) {
     } //flist[lat][dir][bead].pts[pt] = flist[lat][dir][bead].pts[n];  then set .pts[n] to zero
 
     wind = 2*mxlist*beads*dir + 2*mxlist*bead + 2*n;
-    //LINE_STAMP;
     GetFromServer_int(&Coords_from,lat,wind,tempi);
-    //LINE_STAMP;
     GetFromServer_int(&Coords_from,lat,wind+1,tempi2);
+
     wind = 2*mxlist*beads*dir + 2*mxlist*bead + 2*pt;
-    //LINE_STAMP;
     PutToServer_int(&Coords_from,lat,wind,tempi);
-    //LINE_STAMP;
     PutToServer_int(&Coords_from,lat,wind+1,tempi2);
+
     tempi[0] = 0;
     wind = 2*mxlist*beads*dir + 2*mxlist*bead + 2*n;
-    //LINE_STAMP;
     PutToServer_int(&Coords_from,lat,wind,tempi);
-    //LINE_STAMP;
     PutToServer_int(&Coords_from,lat,wind+1,tempi);
+
     // flist[lat][dir][bead].from[pt][0] = flist[lat][dir][bead].from[n][0];  then set [n] to zero
 
     globn--;
@@ -2294,10 +2260,10 @@ void delpoint(int lat, int dir, int bead, int pt) {
     //LINE_STAMP;
     GetFromServer_dbl(&Coords_wlist,lat,wind,tw);
     //LINE_STAMP;
-    GetFromServer_dbl(&Coords_twlist,lat,ind,ttw);
-    ttw[0] -= tw[0];
-    //LINE_STAMP;
-    PutToServer_dbl(&Coords_twlist,lat,ind,ttw);
+    allind[0] = lat;
+    allind[0] = ind;
+    ttw[0] = -tw[0] + NGA_Read_inc(Coords_twlist.ga,allind,-tw[0]);
+
     // flist[lat][dir][bead].twlist -= flist[lat][dir][bead].wlist[n];
 
     tw[0] = 0.;
@@ -2612,7 +2578,7 @@ point_t ptconv(int lat, int dir, int bead) {
 
   for (i=0;i<nemerg;i++) {
     ocoor.x[0] = emerg[i].op;
-    if ((which(lat,dir) == bead) && (bascheck(lat,dir,bead) != odir)) {
+    if ((which(lat,dir) == bead) && (bascheck() != odir)) {
       for (part=0;part<npart;part++) {
 	for (j=0;j<ndim;j++) {
 	  temp.x[part][j] = emerg[i].x[part][j];
@@ -2634,7 +2600,7 @@ point_t ptconv(int lat, int dir, int bead) {
 }
 /*-------------------------------------------------------------------------*/
 
-int bascheck(int lat, int dir, int bead) {
+int bascheck() {
   
   /* this function checks if the walker is in a basin */
 

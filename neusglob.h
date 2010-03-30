@@ -1,6 +1,6 @@
 #define NDIM_c 3
 #define NOP_c 1
-#define MXLIST_c 500
+#define MXLIST_c 1000
 #define PI_c 3.14159265
 #define NPART_c 262 
 #define NEMERG_c 385
@@ -12,13 +12,13 @@ const char flname[30] = "NOREAD";
 const char wname[30] = "NOREAD";
 const char fxname[30] = "NOREAD";
 
-const int beads = 30;
+const int beads = 15;
 const int wtupdt = 800000;
-const int T = 300;         /* measured in number of cycles */
+const int T = 2;         /* measured in number of cycles */
 const int every = 800000;
 const int stkfrq = 1000;
 const int wrfrq = 800000;
-const int xyzfrq = 1000;
+const int xyzfrq = 10000;
 const int chkfrq = 1000;  
 const int globfrq = 1000;  
 const int tres = 1000;
@@ -26,7 +26,7 @@ const int nemerg = NEMERG_c;
 const double tmin = 100.;
 const double tmax = 400.;
 
-const double s = 1.e-2;
+const double s = 2.e-3;
 const double frac = 0.1;
 const double wfrac = 1.0;
 const double kappa = 0.1;
@@ -76,5 +76,5 @@ empoint_t emerg[NEMERG_c];
 
 opoint_t basin[2];
 double bwidth = 10.;
-double bmin = 130.;
-double bmax = 245.;
+double bmin = 110.;
+double bmax = 265.;
