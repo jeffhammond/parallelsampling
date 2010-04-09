@@ -63,9 +63,10 @@ ServedCoords Coords_pts;
 ServedCoords Coords_wlist;
 ServedCoords Coords_from;
 ServedCoords Coords_clock;
+ServedCoords Coords_mytim;
 ServedCoords Coords_nwstack;
 
-double ***weight, ***wavg, ***elaps, ***tau;
+double ***weight, ***wavg, ***tau;
 opoint_t **stravg;
 opoint_t ***z;
 int ***count, ***on, **navg, ***ntau;
@@ -83,9 +84,9 @@ double globtim=0.;
 int nglobtim=0;
 int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2;
 int *tnwstack1, *tnwstack2;
-int verb=3;
-int me, nproc, status, beadsp2, beadsp3;
-double tstepsq;
+int verb=2;
+int me, nproc, status, beadsp2, beadsp3, lockind;
+double tstepsq, tempw[1];
 
 char crname[30]="cutRNAin.dat";      // crystal structure file
 char secname[30]="cutRNAsec.con";    // secondary contacts
@@ -137,9 +138,12 @@ void repar(int lat, int dir);
 void nobad(int lat, int dir, int bead);
 void delpoint(int lat, int dir, int bead, int pt);
 void wrstring(), getstring();
-double getprob(int lat, int dir, int bead, int i, int j, int n1, int n2);
-double getnprob(int lat, int dir, int bead, int i, int j);
-int rstart[2], tempi[1], tempi2[1];
+int getprob(int lat, int dir, int bead, int i, int j, int n1, int n2);
+int getnprob(int lat, int dir, int bead, int i, int j);
+void chksec(int lat, int dir, int bead);
+void chkprim(int lat, int dir, int bead);
+int chkdir(int lat, int dir, int bead);
+int rstart[2], tempi[1], tempi2[1], endtraj;
 
 void **alloc2d(int varsize, int n, int p) ; 
 void ***alloc3d(int varsize, int n, int p, int q) ;
@@ -165,8 +169,8 @@ int main(int argc,char** argv){
   int i, j, k, l, m, dim, size, temp, done, worker, mtag, n1, n2, part, lim;
   int op, dir1, dir2, from, to, rem, limit, pt, bead1, bead2;
   int lat, dir, bead, tcount;
-  int rc, maxsize, ind, tbas, newreg, flag, olat, odir, oldst, mcount;
-  int cycle, endcycle, endtraj, gotmin;
+  int rc, maxsize, ind, flag, mcount, it1, it2;
+  int cycle, endcycle, gotmin;
   unsigned int iseed = (unsigned int)time(NULL);
   void back(int lat, int dir, int bead);
   void createservers(), initvar();
@@ -179,7 +183,7 @@ int main(int argc,char** argv){
   void updtwts(int ind);
   void wrextend(int index);
   void rddelta(), rdcryst(), rdsolv(), rdemerg();
-  double rate[2][2], sum1, sum2, tempw[1], t1, t2;
+  double rate[2][2], sum1, sum2, t1, t2, telaps;
   int wtupdt_s;
   FILE * outFile;
   FILE * ratFile, *filein;
@@ -248,7 +252,7 @@ int main(int argc,char** argv){
   calpha[1]=0.;
   salpha[1]=1.;
 
-  if (verb >= 3) {
+  if ((verb >= 3) || ((verb >=2) && (me == 0))) {
       sprintf(outname,"%s%d%s","out",me,".dat");
       mainout = fopen(outname,"w");
       fprintf(mainout,"rank = %d\n", me);
@@ -299,7 +303,6 @@ int main(int argc,char** argv){
 
   z = (opoint_t ***) alloc3d(sizeof(opoint_t), 2, 2, beads);
   on = (int ***) alloc3d(sizeof(int), 2, 2, beads);
-  elaps = (double ***) alloc3d(sizeof(double), 2, 2, beads);
   weight = (double ***) alloc3d(sizeof(double), 2, 2, beads);
   wavg = (double ***) alloc3d(sizeof(double), 2, 2, beads);
   stravg= (opoint_t **) alloc2d(sizeof(opoint_t), 2, beads);
@@ -435,22 +438,22 @@ int main(int argc,char** argv){
   for (cycle=1;cycle<=T;cycle++) { 
     
     if (me == 0) {
-	printf("Starting cycle %d of %d\n",cycle,T);
-    }
-
-    mcount = 0;
-    for (dir=0;dir<=1;dir++) {
-      for (bead=0;bead<=beads-1;bead++) {
-	tint1[mcount] = 1;
-	mcount++;
+      printf("Starting cycle %d of %d\n",cycle,T);
+    
+      mcount = 0;
+      for (dir=0;dir<=1;dir++) {
+	for (bead=0;bead<=beads-1;bead++) {
+	  tint1[mcount] = 1;
+	  mcount++;
+	}
       }
+      //LINE_STAMP;
+      PutToServer_int(&Coords_count,0,-1,tint1);  // set all counts to 1
+      //LINE_STAMP;
+      PutToServer_int(&Coords_count,1,-1,tint1);
+      PutToServer_int(&Coords_on,0,-1,tint1);    // set all regions to 'on'
+      PutToServer_int(&Coords_on,1,-1,tint1);
     }
-    //LINE_STAMP;
-    PutToServer_int(&Coords_count,0,-1,tint1);  // set all counts to 1
-    //LINE_STAMP;
-    PutToServer_int(&Coords_count,1,-1,tint1);
-    PutToServer_int(&Coords_on,0,-1,tint1);    // set all regions to 'on'
-    PutToServer_int(&Coords_on,1,-1,tint1);
     GA_Sync();
 
     endcycle = 0;
@@ -458,23 +461,23 @@ int main(int argc,char** argv){
       
       /* start a new trajectory */
       tcount = getmin(&lat,&dir,&bead);   /* returns (lat,dir,bead) for the region with the lowest counter */
-
+      
       if (lat == -1) {
 	endcycle = 1;
       } else {
-
-	if (verb >= 3) {
+	
+	if ((verb >= 3) || ((verb >= 2) && (me ==0))) {
 	  mainout = fopen(outname,"a");
 	  fprintf(mainout,"Running on %d %d %d, start count = %d\n",lat,dir,bead,tcount);
 	  fclose(mainout);
 	}
 
 	if (verb >= 3) {
-	    sprintf(filename,"flow%d.xyz",me);
-	    xyzout = fopen(filename,"w");
-	    fprintf(xyzout,"%i \n polymer movie\n", npart);
+	  sprintf(filename,"flow%d.xyz",me);
+	  xyzout = fopen(filename,"w");
+	  fprintf(xyzout,"%i \n polymer movie\n", npart);
 	}
-
+	
 	if (((tcount != 1) || (strcmp(fxname,"NOREAD") != 0))|| (cycle!=1)) {
 	  back(lat,dir,bead);  /* initialize trajectory */
 	} else {
@@ -490,191 +493,83 @@ int main(int argc,char** argv){
 	endtraj = 0;
 	while (!endtraj) {
 	    
-	    /* move */
+	  /* move */
 	    
-	    move();
+	  move();
 
-	    if (!polyerr) {
-	    
-		//LINE_STAMP;
-	      allind[0] = lat;
-	      allind[1] = dir*beads + bead;
-	      tempw[0] = 1. + NGA_Read_inc(Coords_elaps.ga,allind,1.);
-		
-		mytim += 1;
-		myclock += 1;
-		
-		/* stack */
-		
-		if ((mytim-1)%xyzfrq ==0) {
-		    if (verb >= 3) {
-			mainout = fopen(outname,"a");
-			fprintf(mainout,"proc %d: mytim = %d writing to xyz \n",me, mytim);
-			fclose(mainout);
-			wrxyz(mytim-1);
-		    }
-		}
-		
-		if (tcount%stkfrq == 0) {
-		    stack(lat,dir,bead);
-		}
-		
-		if (wtalg == 1) { /* local wt alg */
-		    if ((tcount + cycle*every)%wtupdt_s == 0) {
-			wtstack(lat,dir,bead);
-		    }
-		}
-		
-		if (mytim%chkfrq == 0) {
-		    
-		    /* check */
-		    
-		    tbas = bascheck();
-		    
-		    if (tbas + dir == 1) {  /* either tbas = 0, dir = 1 or tbas = 1, dir = 0 */
-		      
-			/* basin crossing */
-			
-		      allind[0] = lat;
-		      allind[1] = dir*beads + bead;
-		      tempi[0] = 1 + NGA_Read_inc(Coords_narr.ga,allind,1);
-			
-			if (dir == 1) {
-			  odir = 0;
-			}else{
-			  odir = 1;
-			}
-			if (verb >= 3) {
-			  mainout = fopen(outname,"a");
-			  fprintf(mainout,"Ended traj: dir cross\n");
-			  fclose(mainout);
-			}
-			newreg = whichx(lat,odir,coor);
-			if (wtalg == 1) {
-			  fixwt(lat,dir,odir,bead,newreg); /* transfer weight */
-			} else if (rstart[0] != -1) {
-			  allind[0] = lat;
-			  allind[1] = dir*beads + bead;
-			  tempw[0] = mytim + NGA_Read_inc(Coords_tau.ga,allind,mytim);
-			  tempi[0] = 1 + NGA_Read_inc(Coords_ntau.ga,allind,1);
-			  
-			  n1 = rstart[0];
-			  n2 = rstart[1];
+	  if (!polyerr) {
 
-			  allind[0] = lat;
-			  allind[1] = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
-			  tempi[0] = 1 + NGA_Read_inc(Coords_prob.ga,allind,1);			  
-			  
-			  allind[1] = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
-			  tempi[0] = 1 + NGA_Read_inc(Coords_nprob.ga,allind,1);
-			  
-			  //nprob[lat][dir][bead][n1][n2]++;
-			  //prob[lat][dir][bead][n1][n2][odir][newreg]++;
-			}
-			if (lat == 1) {
-			  olat =0;
-			} else {
-			  olat =1;
-			}
-			newreg = whichx(olat,odir,coor);
-			ind = dir*beads + bead;
-			//LINE_STAMP;
-			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-			addpoint(olat,odir,newreg,coor,tempw[0],dir,state);  /* send point to other flux list */
-			endtraj = 1;
-		    } else {  /* check for sec and prim crossings */
-		      
-		      /* sec crossing */
-		      oldst = state;
-		      gtst(lat,dir);
-		      if (state != oldst) {
-			if (lat == 1) {
-			  olat = 0;
-			}else{
-			  olat = 1;
-			}
-			if (verb >= 3) {
-			  mainout = fopen(outname,"a");
-			  fprintf(mainout,"Adding flux point to %d %d %d\n",olat,dir,state);
-			  fclose(mainout);
-			}
-			ind = dir*beads + bead;
-			//LINE_STAMP;
-			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-			addpoint(olat,dir,state,coor,tempw[0],dir,oldst);
-		      }
-			
-		      /* prim crossing */
-		      newreg = which(lat,dir);
-		      if (newreg != bead) {
-			if (wtalg == 1) {
-			  fixwt(lat,dir,dir,bead,newreg); /* fix weight */
-			} else if (rstart[0] != -1) {
-			  allind[0] = lat;
-			  allind[1] = dir*beads + bead;
-			  tempw[0] = mytim + NGA_Read_inc(Coords_tau.ga,allind,mytim); //add time to stack
-			  tempi[0] = 1 + NGA_Read_inc(Coords_ntau.ga,allind,1); 
-			  
-			  n1 = rstart[0];
-			  n2 = rstart[1];
-			  
-			  allind[1] = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
-			  tempi[0] = 1 + NGA_Read_inc(Coords_prob.ga,allind,1); 
-
-			  allind[1] = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
-			  tempi[0] = 1 + NGA_Read_inc(Coords_nprob.ga,allind,1); 
-			  
-			  //nprob[lat][dir][bead][n1][n2]++;
-			  //prob[lat][dir][bead][n1][n2][dir][newreg]++;
-			}
-			endtraj = 1;
-			if (verb >= 3) {
-			  mainout = fopen(outname,"a");
-			  ind = dir*beads + bead;
-			  fprintf(mainout,"Ended traj: prim cross\n");
-			  fclose(mainout);
-			}
-		      }
-		    }
-		}
-		tcount++;
-		if (tcount%globfrq == 0) {
-		    ind = dir*beads + bead;
-		    allind[0] = lat;
-		    allind[1] = ind;
-		    tempi[0] = globfrq + NGA_Read_inc(Coords_count.ga,allind,globfrq);
-		    if (tempi[0] > every) {
-			endtraj = 1;
-			if (verb >= 3) {
-			    mainout = fopen(outname,"a");
-			    fprintf(mainout,"Ended traj: count\n");
-			    fclose(mainout);
-			}
-			/* write coordinates to (someone's) fluxlist */
-			ind = dir*beads + bead;
-			//LINE_STAMP;                                    
-			GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
-
-			tbas = bascheck();
-			if (tbas+dir == 1) {
-			  newreg = which(lat,tbas);
-			  addpoint(lat,tbas,newreg,coor,tempw[0],-1,-1);
-			} else {
-			  newreg = which(lat,dir);
-			  addpoint(lat,dir,newreg,coor,tempw[0],-1,-1);
-			}
-		    }
-		}
-	    } else {   /* if polyerr */
-		endtraj = 1;
-		polyerr = 0;
+	    mytim += 1;
+	    myclock += 1;
+		
+	    /* stack */
+		
+	    if ((mytim-1)%xyzfrq ==0) {
+	      if (verb >= 3) {
+		mainout = fopen(outname,"a");
+		fprintf(mainout,"proc %d: mytim = %d writing to xyz \n",me, mytim);
+		fclose(mainout);
+		wrxyz(mytim-1);
+	      }
 	    }
+		
+	    if (tcount%stkfrq == 0) {
+	      stack(lat,dir,bead);
+	    }
+		
+	    if (wtalg == 1) { /* local wt alg */
+	      if ((tcount + cycle*every)%wtupdt_s == 0) {
+		wtstack(lat,dir,bead);
+	      }
+	    }
+		
+	    if (mytim%chkfrq == 0) {
+		    
+	      /* check */
+		    
+	      if (!chkdir(lat,dir,bead)) {
+		chksec(lat,dir,bead);
+		chkprim(lat,dir,bead);
+	      }
+	    }
+	    tcount++;
+	    if (tcount%globfrq == 0) {
+	      ind = dir*beads + bead;
+	      allind[0] = lat;
+	      allind[1] = ind;
+	      tempi[0] = globfrq + NGA_Read_inc(Coords_elaps.ga,allind,globfrq);
+	      tempi[0] = globfrq + NGA_Read_inc(Coords_count.ga,allind,globfrq);
+	      if (tempi[0] > every) {
+		if (verb >= 3) {
+		  mainout = fopen(outname,"a");
+		  fprintf(mainout,"Ended traj: count\n");
+		  fclose(mainout);
+		}
+		/* write coordinates to (someone's) fluxlist */
+		ind = dir*beads + bead;
+		//LINE_STAMP;                                    
+		GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+		
+		if (!chkdir(lat,dir,bead)) {
+		  chkprim(lat,dir,bead);
+		}
+		if (!endtraj) {
+		  addpoint(lat,dir,bead,coor,tempw[0],rstart[0],rstart[1]);
+		  endtraj = 1;
+		}
+	      }
+	    }
+	  } else {   /* if polyerr */
+	    endtraj = 1;
+	    polyerr = 0;
+	  }
 	}  /* end of trajectory loop */
 	ind = dir*beads + bead;
 	allind[0] = lat;
 	allind[1] = ind;
+	tempi[0] = tcount%globfrq + NGA_Read_inc(Coords_elaps.ga,allind,tcount%globfrq);
 	tempi[0] = tcount%globfrq + NGA_Read_inc(Coords_count.ga,allind,tcount%globfrq);
-	if (verb >= 3) {
+	if ((verb >= 3) || ((verb >=2) && (me == 0))) {
 	    mainout = fopen(outname,"a");
 	    fprintf(mainout,"Count on %d %d %d, is now = %d\n",lat,dir,bead,tempi[0]);
 	    fclose(mainout);
@@ -686,7 +581,7 @@ int main(int argc,char** argv){
     if (phase == 1) {  /* move the string */
       
       if (me == 0) {
-
+	
 	if (verb >= 2) {
 	  printf("Moving string..\n",cycle);
 	}
@@ -695,7 +590,7 @@ int main(int argc,char** argv){
       }
       /* check point */
       GA_Sync();
-
+      
       getstring();
       
       for (lat=0;lat<=1;lat++) {
@@ -703,9 +598,9 @@ int main(int argc,char** argv){
 	  for (bead=0;bead<=beads-1;bead++) {
 	    ind = dir*beads + bead;
 	    if ((ind%nproc) == me) {
-		if (verb >=3) {
-		    printf("proc %d is doing ind = %d of %d\n",me,ind,beads+beads-1);
-		}
+	      if (verb >=3) {
+		printf("proc %d is doing ind = %d of %d\n",me,ind,beads+beads-1);
+	      }
 	      nobad(lat,dir,bead);
 	    }
 	  }
@@ -745,13 +640,13 @@ int main(int argc,char** argv){
 	  for (bead=0;bead<=beads-1;bead++) {
 	    ind = dir*beads + bead;
 	    //LINE_STAMP;
-	    GetFromServer_dbl(&Coords_elaps,lat,ind,tempw);
-	    elaps[lat][dir][bead] = tempw[0];
+	    GetFromServer_int(&Coords_elaps,lat,ind,tempi);
+	    telaps = (float)tempi[0];
 	    //LINE_STAMP;
 	    GetFromServer_int(&Coords_narr,lat,ind,tempi);
 
-	    if (elaps[lat][dir][bead] != 0.) {
-	      rate[lat][dir] += tempi[0]/elaps[lat][dir][bead];
+	    if (telaps != 0.) {
+	      rate[lat][dir] += tempi[0]/telaps;
 	    }
 	  }
 	  rate[lat][dir] /= calcsum(lat,dir);
@@ -843,6 +738,9 @@ int main(int argc,char** argv){
 	      //LINE_STAMP;
 	      GetFromServer_int(&Coords_clock,i,ind,tempi);
 	      fprintf(outFile,"%e %d ",tempw[0],tempi[0]);
+	      GetFromServer_int(&Coords_mytim,i,ind,tempi);
+	      fprintf(outFile,"%d ",tempi[0]);
+
 	      for (part=0; part<npart;part++) {
 		for (dim=0; dim<=ndim-1; dim++) {
 		  ind = 2*npart*ndim*mxlist*beads*j + 2*npart*ndim*mxlist*k + 2*npart*ndim*pt + 2*ndim*part + 2*dim;
@@ -862,6 +760,42 @@ int main(int argc,char** argv){
     }
     fclose(outFile);
 
+    /* write probs */
+  
+    GetFromServer_int(&Coords_nprob,0,-1,tnprob1);
+    //LINE_STAMP;
+    GetFromServer_int(&Coords_nprob,1,-1,tnprob2);
+    //LINE_STAMP;
+    GetFromServer_int(&Coords_prob,0,-1,tprob1);
+    //LINE_STAMP;
+    GetFromServer_int(&Coords_prob,1,-1,tprob2);
+
+    sprintf(outname,"%s","fprob.dat");
+    outFile = fopen(outname,"w");
+    for (lat=0;lat<=1;lat++) {
+      for (dir=0; dir<=1; dir++) {
+	for (bead=0; bead<=beads-1; bead++) {
+	  for (n1=0; n1<2; n1++) {
+	    for (n2=0; n2<=beads-1; n2++) {
+	      it1 = getnprob(lat,dir,bead,n1,n2);
+	      if (it1 != 0) {
+		fprintf(outFile,"%d %d %d %d %d %d\n",lat,dir,bead,n1,n2,it1);
+		for (i=0; i<2; i++) {
+		  for (j=0; j<=beads-1; j++) {
+		    it2 = getprob(lat,dir,bead,n1,n2,i,j);
+		    if (it2 != 0) {
+		      fprintf(outFile,"%d %d %d\n",i,j,it2);
+		    }
+		  }
+		}
+	      }
+	    }
+	  }
+	}
+      }
+    }
+    fclose(outFile);
+		    
     /* write results */
   }
   
@@ -895,13 +829,14 @@ int main(int argc,char** argv){
   status = DestroyCoordServer(&Coords_wlist);
   status = DestroyCoordServer(&Coords_from);
   status = DestroyCoordServer(&Coords_clock);
+  status = DestroyCoordServer(&Coords_mytim);
   status = DestroyCoordServer(&Coords_nwstack);
 
   if (me == 0) GA_Print_stats();
   
   GA_Terminate();
   MPI_Finalize();
-
+  
   return(0);
 }
 
@@ -919,14 +854,14 @@ void back (int lat, int dir, int bead) {
      to a saved point, or if none exist, to the position
      of the bead (guestimating for undefined coordinates) */
   
-  double sum, a, ttwlist, tempw[1], oran, t1, t2;
+  double sum, a, ttwlist, oran, t1, t2;
   int i, j, newreg, ind, limit, k;
-  int tnlist, tfull, part, dim, good, lockind;
+  int tnlist, tfull, part, dim, good;
   point_t point;
   FILE *filein;
 
 
-  lockind = lat*2*beads + dir*beads + bead;
+  lockind = getlockind(0,lat,dir,bead);
   //LINE_STAMP;
   if (me==0) {
     t1 = MPI_Wtime();
@@ -1060,6 +995,8 @@ void back (int lat, int dir, int bead) {
       //LINE_STAMP;
       GetFromServer_int(&Coords_clock,lat,ind,tempi);
       myclock = tempi[0];
+      GetFromServer_int(&Coords_mytim,lat,ind,tempi);
+      mytim = tempi[0];
     } else {
       j = 0;
       ind = dir*beads + bead;
@@ -1073,6 +1010,7 @@ void back (int lat, int dir, int bead) {
       rstart[0] = -1;
       rstart[1] = -1;
       coor = ptconv(lat,dir,bead);
+      mytim = 0;
     }
     
     
@@ -1098,7 +1036,6 @@ void back (int lat, int dir, int bead) {
 	//	gaexit(97);
       }
     }
-    mytim = 0;
     newreg = which(lat,dir);
     if (newreg != bead) {
       if (verb >= 2) {
@@ -1132,7 +1069,7 @@ void back (int lat, int dir, int bead) {
 /*-------------------------------------------------------------------------*/
  void fixwt(int lat, int dir1, int dir2, int reg1, int reg2) {
    
-   double temp, w[1], tempe[1];
+   double temp, w[1], tempe[1], telaps, telaps0;
    int i, i2;
 
    i = dir1*beads + reg1;
@@ -1141,21 +1078,32 @@ void back (int lat, int dir, int bead) {
    GetFromServer_dbl(&Coords_wadj,lat,i,w);
 
    //LINE_STAMP;
-   GetFromServer_dbl(&Coords_elaps,lat,i,tempe);
-   elaps[lat][dir1][reg1] = tempe[0];
+   GetFromServer_int(&Coords_elaps,lat,i,tempi);
+   telaps = (float)tempi[0];
 
    //LINE_STAMP;
-   GetFromServer_dbl(&Coords_elaps,0,0,tempe);
-   elaps[0][0][0] = tempe[0];
+   GetFromServer_int(&Coords_elaps,0,0,tempi);
+   telaps0 = (float)tempi[0];
 
-   temp = s*w[0]*elaps[0][0][0]/elaps[lat][dir1][reg1];
+   if (telaps != 0.) {
+     temp = s*w[0]*telaps0/telaps;
+   } else {
+     temp = 0.;
+   }
+
    w[0] -= temp;
    //LINE_STAMP;
    PutToServer_dbl(&Coords_wadj,lat,i,w);
 
-   allind[0] = lat;
-   allind[1] = i2;
-   w[0] = temp + NGA_Read_inc(Coords_wadj.ga,allind,temp);
+   lockind = getlockind(2,lat,dir2,reg2);
+   GA_Lock(lockind);
+   GA_Init_fence();
+   GetFromServer_dbl(&Coords_wadj,lat,i2,w);
+   w[0] += temp;
+   PutToServer_dbl(&Coords_wadj,lat,i2,w);
+   GA_Fence();
+   GA_Unlock(lockind);
+
  }
 /*-------------------------------------------------------------------------*/
 void wtstack(int lat, int dir, int bead) {
@@ -1173,9 +1121,17 @@ void wtstack(int lat, int dir, int bead) {
   //LINE_STAMP;
   GetFromServer_dbl(&Coords_wadj,lat,i,tempwadj);
 
+  lockind = getlockind(2,lat,dir,bead);
+  GA_Lock(lockind);
+  GA_Init_fence();
+  GetFromServer_dbl(&Coords_wavg,lat,i,tempwavg);
+  tempwavg[0] += tempwadj[0];
+  PutToServer_dbl(&Coords_wavg,lat,i,tempwavg);
+  GA_Fence();
+  GA_Unlock(lockind);
+
   allind[0] = lat;
   allind[1] = i;
-  tempwavg[0] = tempwadj[0] + NGA_Read_inc(Coords_wavg.ga,allind,tempwadj[0]);
   tempi[0] = 1 + NGA_Read_inc(Coords_nwstack.ga,allind,1);
 }
 /*-------------------------------------------------------------------------*/
@@ -1362,7 +1318,7 @@ int wtmat(int lat, int stdir, int stbead) {
   /* this function calculates the weights */
 
   double **fmat, **b, *vec, sum, avtau, tw, wt, tn, tprob;
-  double getfrac(int lat, int dir, int bead, int dir2, int bead2), tempw[1],temp1;
+  double getfrac(int lat, int dir, int bead, int dir2, int bead2),temp1;
   int lim, i, j, dir, bead, regi, dirind[2*beads], regind[2*beads];
   int ndir, ni, odir, good, sdir, sbead, ind;
   FILE * matout;
@@ -1729,21 +1685,21 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   /* this function adds the point 'x' to the (lat,dir,bead) fluxlist
      along with the weight 'wt' */
   
-  int tgt, n, i, ind, tfull, wind, part, dim, ptind, lockind;
-  double tw[1], ttw[1], tempw[1], t1,t2;
+  int tgt, n, i, ind, tfull, wind, part, dim, ptind;
+  double tw[1], ttw[1], t1,t2;
   
   // printf("proc %d: adding point to [%d,%d,%d] w = %e\n",me,lat,dir,bead,wt); fflush(stdout);
 
-  lockind = lat*2*beads + dir*beads + bead;
+  lockind = getlockind(0,lat,dir,bead);
   //LINE_STAMP;
   if (me==0) {
-    t1 = MPI_Wtime();
-  }
+	t1 = MPI_Wtime();
+    }
   GA_Lock(lockind);
   if (me==0) {
-    t2 = MPI_Wtime();
-    globtim += t2-t1;
-    nglobtim++;
+      t2 = MPI_Wtime();
+      globtim += t2-t1;
+      nglobtim++;
   }
   GA_Init_fence();
   ind = dir*beads + bead;
@@ -1777,9 +1733,10 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
     //LINE_STAMP;
     GetFromServer_dbl(&Coords_wlist,lat,wind,tw);
     //LINE_STAMP;
-    allind[0] = lat;
-    allind[1] = ind;
-    ttw[0] = -tw[0] + NGA_Read_inc(Coords_twlist.ga,allind,-tw[0]);
+
+    GetFromServer_dbl(&Coords_twlist,lat,ind,ttw);
+    ttw[0] -= tw[0];
+    PutToServer_dbl(&Coords_twlist,lat,ind,ttw);
     
     //    flist[lat][dir][bead].twlist -= flist[lat][dir][bead].wlist[n];
   }
@@ -1793,9 +1750,10 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   PutToServer_dbl(&Coords_wlist,lat,wind,tw);
   //flist[lat][dir][bead].wlist[n] = wt;
 
-  allind[0] = lat;
-  allind[1] = ind;
-  ttw[0] = wt + NGA_Read_inc(Coords_twlist.ga,allind,wt);
+  GetFromServer_dbl(&Coords_twlist,lat,ind,ttw);
+  ttw[0] += wt;
+  PutToServer_dbl(&Coords_twlist,lat,ind,ttw);
+
   //flist[lat][dir][bead].twlist += wt;
 
   for (part=0; part<npart;part++) {
@@ -1825,6 +1783,8 @@ void addpoint (int lat, int dir, int bead, point_t x, double wt, int from1, int 
   tempi[0] = myclock;
   //LINE_STAMP;
   PutToServer_int(&Coords_clock,lat,ind,tempi);
+  tempi[0] = mytim;
+  PutToServer_int(&Coords_mytim,lat,ind,tempi);
   // flist[lat][dir][bead].clock[n] = myclock;
   
   ind = dir*beads + bead;
@@ -1890,11 +1850,19 @@ opoint_t ptavg(opoint_t x, opoint_t y) {
        allind[1] = bead;
        tempi[0] = 1 + NGA_Read_inc(Coords_navg.ga,allind,1);
        
+       lockind = getlockind(3,lat,dir,bead);
+       GA_Lock(lockind);
+       GA_Init_fence();
+       
        for (j=0;j<=nop-1;j++) {
 	 index = bead*nop + j;
-	 allind[1] = index;
-	 temps[0] = ocoor.x[j] + NGA_Read_inc(Coords_stravg.ga,allind,ocoor.x[j]);
+	 
+	 GetFromServer_dbl(&Coords_stravg,lat,index,temps);
+	 temps[0] += ocoor.x[j];
+	 PutToServer_dbl(&Coords_stravg,lat,index,temps);
        }
+       GA_Fence();
+       GA_Unlock(lockind);
      }
    }
 
@@ -2122,7 +2090,6 @@ void nobad(int lat, int dir, int bead) {
      points are no longer in the Voronoi regions */
 
   int i, j, k, l, limit, lb, ub, chkall, tfull,ptind, part, dim, ind;
-  double tempw[1];
   point_t x;
 
   ind = dir*beads + bead;
@@ -2187,7 +2154,7 @@ void delpoint(int lat, int dir, int bead, int pt) {
   
   int n, i, part,ind,wind;
   int ptind, ptind2, dim;
-  double tw[1], ttw[1], tempw[1];
+  double tw[1], ttw[1];
   
   n = globn - 1;
   ind = beads*dir + bead;
@@ -2239,16 +2206,13 @@ void delpoint(int lat, int dir, int bead, int pt) {
     wind = 2*mxlist*beads*dir + 2*mxlist*bead + 2*n;
     GetFromServer_int(&Coords_from,lat,wind,tempi);
     GetFromServer_int(&Coords_from,lat,wind+1,tempi2);
-
     wind = 2*mxlist*beads*dir + 2*mxlist*bead + 2*pt;
     PutToServer_int(&Coords_from,lat,wind,tempi);
     PutToServer_int(&Coords_from,lat,wind+1,tempi2);
-
     tempi[0] = 0;
     wind = 2*mxlist*beads*dir + 2*mxlist*bead + 2*n;
     PutToServer_int(&Coords_from,lat,wind,tempi);
     PutToServer_int(&Coords_from,lat,wind+1,tempi);
-
     // flist[lat][dir][bead].from[pt][0] = flist[lat][dir][bead].from[n][0];  then set [n] to zero
 
     globn--;
@@ -2260,9 +2224,9 @@ void delpoint(int lat, int dir, int bead, int pt) {
     //LINE_STAMP;
     GetFromServer_dbl(&Coords_wlist,lat,wind,tw);
     //LINE_STAMP;
-    allind[0] = lat;
-    allind[0] = ind;
-    ttw[0] = -tw[0] + NGA_Read_inc(Coords_twlist.ga,allind,-tw[0]);
+    GetFromServer_dbl(&Coords_twlist,lat,ind,ttw);
+    ttw[0] -= tw[0];
+    PutToServer_dbl(&Coords_twlist,lat,ind,ttw);
 
     // flist[lat][dir][bead].twlist -= flist[lat][dir][bead].wlist[n];
 
@@ -2489,7 +2453,6 @@ void fxread() {
   int i, j, k, op, dir, ti, tj, tk, limit, pt, dim, part, ind;
   FILE * fxin;
   float temp;
-  double tempw[1];
   float tw;
   
   fxin = fopen(fxname,"r");
@@ -2536,6 +2499,8 @@ void fxread() {
 	    PutToServer_dbl(&Coords_wlist,i,ind,tempw);
 	    //LINE_STAMP;
 	    PutToServer_int(&Coords_clock,i,ind,tempi);
+	    fscanf(fxin,"%d ",&tempi[0]);
+	    PutToServer_int(&Coords_mytim,i,ind,tempi);
 	    
 	    for (part=0;part<npart;part++) {
 	      for (dim=0; dim<=ndim-1; dim++) {
@@ -3436,10 +3401,10 @@ void createservers() {
   status = CreateCoordServer_dbl(&Coords_weight, &MaxNum, "test");
   status = CreateCoordServer_dbl(&Coords_wadj, &MaxNum, "test");
   status = CreateCoordServer_dbl(&Coords_wavg, &MaxNum, "test");
-  status = CreateCoordServer_dbl(&Coords_elaps, &MaxNum, "test");
   status = CreateCoordServer_dbl(&Coords_tau, &MaxNum, "test");
   status = CreateCoordServer_dbl(&Coords_twlist, &MaxNum, "test");
   
+  status = CreateCoordServer_int(&Coords_elaps, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_count, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_narr, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_on, &MaxNum, "test");
@@ -3470,10 +3435,11 @@ void createservers() {
   MaxNum = 2*beads*mxlist;
   status = CreateCoordServer_dbl(&Coords_wlist, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_clock, &MaxNum, "test");
+  status = CreateCoordServer_int(&Coords_mytim, &MaxNum, "test");
   MaxNum = 2*beads*mxlist*2;
   status = CreateCoordServer_int(&Coords_from, &MaxNum, "test");
 
-  MaxNum = 2*2*beads;
+  MaxNum = 4*2*2*beads;
   status = GA_Create_mutexes(MaxNum);
 
 //  printf("all coord servers created by proc %d\n",me); fflush(stdout);
@@ -3537,8 +3503,6 @@ void initvar() {
 	stravg[j][k].x[op] = 0.;     /* super-globals */
       }
       for (i=0; i<=1; i++) {
-	elaps[i][j][k] = 0.;
-
 	for (pt=0; pt<=tres-1; pt++) {
 	  thist[i][j][k][pt] = 0;
 	}
@@ -3571,7 +3535,7 @@ void getstring() {
   GetFromServer_dbl(&Coords_z,0,-1,tz1);
   //LINE_STAMP;
   GetFromServer_dbl(&Coords_z,1,-1,tz2);
-  
+
   mcount = 0;
   for (dir=0;dir<=1;dir++) {
     for (i=0;i<beads;i++) {
@@ -3579,14 +3543,19 @@ void getstring() {
 	z[0][dir][i].x[j] = tz1[mcount];
 	z[1][dir][i].x[j] = tz2[mcount];
 	mcount++;
+	if (verb >= 3) {
+	  mainout = fopen(outname,"a");
+	  fprintf(mainout,"%d %d %f %f\n",dir, i,tz1[mcount-1],tz2[mcount-1]);
+	  fclose(mainout);
+	}
       }
     }
   }
 }
-double getprob(int lat, int dir, int bead, int i, int j, int n1, int n2) {
+int getprob(int lat, int dir, int bead, int i, int j, int n1, int n2) {
   
   int ind;
-  double temp;
+  int temp;
 
   if ((((lat > 1) || (dir > 1)) || ((i > 1) || (n1 > 1))) || (((bead >= beads) || (j >= beads)) || (n2 >= beads))) {
     printf("Error in getprob!  Array indices out of bounds\n"); fflush(stdout);
@@ -3601,10 +3570,10 @@ double getprob(int lat, int dir, int bead, int i, int j, int n1, int n2) {
   }
   return(temp);
 }
-double getnprob(int lat, int dir, int bead, int i, int j) {
+int getnprob(int lat, int dir, int bead, int i, int j) {
 
   int ind;
-  double temp;
+  int temp;
 
   if ((((lat > 1) || (dir > 1)) || (i > 1)) || ((bead >= beads) || (j >= beads)))  {
     printf("Error in getnprob!  Array indices out of bounds\n"); fflush(stdout);
@@ -3684,4 +3653,159 @@ double mypow14(double x) {
     xp2 = x*x;
     xp4 = xp2*xp2;
     return(xp4*xp4*xp4*xp2);
+}
+int getlockind(int var, int lat, int dir, int bead) {
+
+  return var*2*2*beads + lat*2*beads + dir*beads + bead;
+}
+
+int chkdir(int lat, int dir, int bead) {
+  
+  /* returns 1 if there is a basin crossing, 0 otherwise */
+  int temp, tbas, odir, n1, n2, olat, newreg, ind;
+
+  temp = 0;
+  tbas = bascheck();
+		    
+  if (tbas + dir == 1) {  /* either tbas = 0, dir = 1 or tbas = 1, dir = 0 */
+    ind = dir*beads + bead;
+    temp = 1;
+			
+    /* basin crossing */
+			
+    allind[0] = lat;
+    allind[1] = dir*beads + bead;
+    tempi[0] = 1 + NGA_Read_inc(Coords_narr.ga,allind,1);
+			
+    if (dir == 1) {
+      odir = 0;
+    }else{
+      odir = 1;
+    }
+    if (verb >= 3) {
+      mainout = fopen(outname,"a");
+      fprintf(mainout,"Ended traj: dir cross\n");
+      fclose(mainout);
+    }
+    newreg = whichx(lat,odir,coor);
+    if (wtalg == 1) {
+      fixwt(lat,dir,odir,bead,newreg); /* transfer weight */
+    } else if (rstart[0] != -1) {
+      allind[0] = lat;
+      allind[1] = dir*beads + bead;
+      /*start lock*/
+      
+      lockind = getlockind(1,lat,dir,bead);
+      GA_Lock(lockind);
+      GA_Init_fence();
+      GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
+      tempw[0] += mytim;
+      PutToServer_dbl(&Coords_tau,lat,ind,tempw);
+      GA_Fence();
+      GA_Unlock(lockind);
+      
+      /*end lock*/
+      
+      tempi[0] = 1 + NGA_Read_inc(Coords_ntau.ga,allind,1);
+      
+      n1 = rstart[0];
+      n2 = rstart[1];
+      
+      allind[0] = lat;
+      allind[1] = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*odir + newreg;
+      tempi[0] = 1 + NGA_Read_inc(Coords_prob.ga,allind,1);			  
+      allind[0] = lat;
+      allind[1] = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
+      tempi[0] = 1 + NGA_Read_inc(Coords_nprob.ga,allind,1);
+      
+      //nprob[lat][dir][bead][n1][n2]++;
+      //prob[lat][dir][bead][n1][n2][odir][newreg]++;
+    }
+    if (lat == 1) {
+      olat =0;
+    } else {
+      olat =1;
+    }
+    newreg = whichx(olat,odir,coor);
+    ind = dir*beads + bead;
+    //LINE_STAMP;
+    GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+    mytim = 0;
+    addpoint(olat,odir,newreg,coor,tempw[0],dir,state);  /* send point to other flux list */
+    endtraj = 1;
+  }
+  return temp;
+}
+
+void chksec(int lat, int dir, int bead) {
+
+  int oldst, olat, ind;
+
+  oldst = state;
+  gtst(lat,dir);
+  if (state != oldst) {
+    if (lat == 1) {
+      olat = 0;
+    }else{
+      olat = 1;
+    }
+    if (verb >= 3) {
+      mainout = fopen(outname,"a");
+      fprintf(mainout,"Adding flux point to %d %d %d\n",olat,dir,state);
+      fclose(mainout);
+    }
+    ind = dir*beads + bead;
+    //LINE_STAMP;
+    GetFromServer_dbl(&Coords_weight,lat,ind,tempw);
+    mytim = 0;
+    addpoint(olat,dir,state,coor,tempw[0],dir,oldst);
+  }
+}
+
+void chkprim(int lat, int dir, int bead) {
+
+  int newreg, ind, n1, n2;
+  
+  /* prim crossing */
+  newreg = which(lat,dir);
+  if (newreg != bead) {
+    ind = dir*beads + bead;
+
+    if (wtalg == 1) {
+      fixwt(lat,dir,dir,bead,newreg); /* fix weight */
+    } else if (rstart[0] != -1) {
+      allind[0] = lat;
+      allind[1] = dir*beads + bead;
+      
+      lockind = getlockind(1,lat,dir,bead);
+      GA_Lock(lockind);
+      GA_Init_fence();
+      GetFromServer_dbl(&Coords_tau,lat,ind,tempw);
+      tempw[0] += mytim;
+      PutToServer_dbl(&Coords_tau,lat,ind,tempw);
+      GA_Fence();
+      GA_Unlock(lockind);
+
+      tempi[0] = 1 + NGA_Read_inc(Coords_ntau.ga,allind,1); 
+      
+      n1 = rstart[0];
+      n2 = rstart[1];
+		    
+      allind[1] = 4*beadsp3*dir + 4*beadsp2*bead + 2*beadsp2*n1 + 2*beads*n2 + beads*dir + newreg;
+      tempi[0] = 1 + NGA_Read_inc(Coords_prob.ga,allind,1); 
+      
+      allind[1] = 2*beadsp2*dir + 2*beads*bead + beads*n1 + n2;
+      tempi[0] = 1 + NGA_Read_inc(Coords_nprob.ga,allind,1); 
+		    
+      //nprob[lat][dir][bead][n1][n2]++;
+      //prob[lat][dir][bead][n1][n2][dir][newreg]++;
+    }
+    endtraj = 1;
+    if (verb >= 3) {
+      mainout = fopen(outname,"a");
+      ind = dir*beads + bead;
+      fprintf(mainout,"Ended traj: prim cross\n");
+      fclose(mainout);
+    }
+  }
 }

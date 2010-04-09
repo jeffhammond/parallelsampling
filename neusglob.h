@@ -7,20 +7,20 @@
 
 long seed = 1;
 const int phase = 2;
-const int wtalg = 1;       /* 1 = local ; 2 = global */
+const int wtalg = 2;       /* 1 = local ; 2 = global */
 const char flname[30] = "NOREAD";
-const char wname[30] = "NOREAD";
-const char fxname[30] = "NOREAD";
+const char wname[30] = "iwt";
+const char fxname[30] = "iflux";
 
 const int beads = 15;
-const int wtupdt = 800000;
-const int T = 2;         /* measured in number of cycles */
-const int every = 800000;
+const int wtupdt = 1200000;
+const int T = 1;         /* measured in number of cycles */
+const int every = 1200000;
 const int stkfrq = 1000;
-const int wrfrq = 800000;
+const int wrfrq = 1200000;
 const int xyzfrq = 10000;
 const int chkfrq = 1000;  
-const int globfrq = 1000;  
+const int globfrq = 500;  
 const int tres = 1000;
 const int nemerg = NEMERG_c;
 const double tmin = 100.;

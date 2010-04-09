@@ -37,10 +37,10 @@
    INC=$(GA_INC) $(MPI_INC)
 
    CC=mpixlc_r
-   CFLAGS=-g $(INC) $(OMPI_FLAGS)
+   CFLAGS=-g -pg $(INC) $(OMPI_FLAGS)
 
    LD=mpixlf90_r
-   LDFLAGS=-g $(LIB) $(OMPI_FLAGS)
+   LDFLAGS=-g -pg $(LIB) $(OMPI_FLAGS)
 
 #############################################
 #
