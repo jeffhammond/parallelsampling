@@ -2639,7 +2639,7 @@ void dostep(){
     for(x=0; x< 3; x++){	
       /* calculate a(t) = F/m */        
       // don't divide by polymass though, since the internal polymer forces are scaled assuming m = 1
-      coor.x[i][x] += 0.5*tstepsq*f1.x[i][x] + tstep*coor.v[i][x];
+      coor.x[i][x] += 0.5*tstepsq*f1[i][x] + tstep*coor.v[i][x];
     }
   }
   
