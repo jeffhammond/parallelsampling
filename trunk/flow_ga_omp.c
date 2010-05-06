@@ -2634,48 +2634,37 @@ void dostep(){
   double a, f2[npart][ndim],temp;
   point_t f, force();
     
-#pragma omp parallel for default(shared) private(i,j,k,temp) schedule(static)
-  for(i=0; i< npart; i++){
-      for(j=i; j< npart; j++){
-	  temp = 0.;
-	  for (k=0;k<3;k++) {
-	      temp += (coor.x[i][k] - coor.x[j][k])*(coor.x[i][k] - coor.x[j][k]);
-	  }
-	  rdists[i][j] = sqrt(temp);
-	  
-	  for (k=0;k<ndim;k++) {
-	      rvecs[i][j].x[k] = coor.x[i][k]-coor.x[j][k];
-	  }
-      }
-  }
-  
-#pragma omp parallel for default(shared) private(i,j,k) schedule(static)
-  for(i=1; i< npart; i++){
-      for(j=0; j< i; j++){
-	  rdists[i][j] = rdists[j][i];
-	  for (k=0; k<3; k++) {
-	      rvecs[i][j].x[k] = -rvecs[j][i].x[k];
-	  }
-      }
-  }
-
 #pragma omp parallel for default(shared) private(i,x,a) schedule(static)
   for(i=0; i< npart; i++){
     for(x=0; x< 3; x++){	
       /* calculate a(t) = F/m */        
       // don't divide by polymass though, since the internal polymer forces are scaled assuming m = 1
-      
-      a = f1[i][x];
-      nextstep[i][x] = 0.5*tstepsq*a + tstep*coor.v[i][x];
+      coor.x[i][x] += 0.5*tstepsq*f1.x[i][x] + tstep*coor.v[i][x];
     }
   }
-
+  
+#pragma omp parallel for default(shared) private(i,j,k,temp) schedule(static)
+  for(i=0; i< npart; i++){
+    for(j=i; j< npart; j++){
+      temp = 0.;
+      for (k=0;k<3;k++) {
+	temp += (coor.x[i][k] - coor.x[j][k])*(coor.x[i][k] - coor.x[j][k]);
+      }
+      rdists[i][j] = sqrt(temp);
+      rdists[j][i] = rdists[i][j];
+      
+      for (k=0;k<ndim;k++) {
+	rvecs[i][j].x[k] = coor.x[i][k]-coor.x[j][k];
+	rvecs[j][i].x[k] = -rvecs[i][j].x[k];
+      }
+    }
+  }
+  
   f = force();
 
 #pragma omp parallel for default(shared) private(i,x) schedule(static)
   for(i=0; i< npart; i++){
     for(x=0; x< 3; x++){
-      coor.x[i][x] += nextstep[i][x];
       f2[i][x] = f.x[i][x];
       coor.v[i][x] += 0.5*(f1[i][x]+f2[i][x])*tstep;
       f1[i][x] = f2[i][x];
