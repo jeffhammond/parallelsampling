@@ -9,17 +9,17 @@ long seed = 1;
 const int phase = 2;
 const int wtalg = 2;       /* 1 = local ; 2 = global */
 const char flname[30] = "NOREAD";
-const char wname[30] = "iwt";
-const char fxname[30] = "iflux";
+const char wname[30] = "NOREAD";
+const char fxname[30] = "NOREAD";
 
 const int beads = 15;
-const int wtupdt = 1200000;
+const int wtupdt = 20000;
 const int T = 1;         /* measured in number of cycles */
-const int every = 1200000;
+const int every = 20000;
 const int stkfrq = 1000;
-const int wrfrq = 1200000;
-const int xyzfrq = 10000;
-const int chkfrq = 1000;  
+const int wrfrq = 20000;
+const int xyzfrq = 100;
+const int chkfrq = 50;  
 const int globfrq = 500;  
 const int tres = 1000;
 const int nemerg = NEMERG_c;
@@ -32,7 +32,7 @@ const double wfrac = 1.0;
 const double kappa = 0.1;
 
 const double grav = 0.06;
-const double tstep = 5.e-4;
+const double tstep = 0.1;
 const double beta = 10./6.;
 
 const double Pi = PI_c;
