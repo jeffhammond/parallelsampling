@@ -1,37 +1,38 @@
 #define NDIM_c 3
 #define NOP_c 1
-#define MXLIST_c 1000
+#define MXLIST_c 500
 #define PI_c 3.14159265
 #define NPART_c 262 
-#define NEMERG_c 385
+#define NEMERG_c 790
 
-long seed = 1;
 const int phase = 2;
 const int wtalg = 2;       /* 1 = local ; 2 = global */
 const char flname[30] = "NOREAD";
-const char wname[30] = "NOREAD";
-const char fxname[30] = "NOREAD";
+const char wname[30] = "iwt";
+const char fxname[30] = "iflux";
+const char pname[30] = "iprob";
 
-const int beads = 15;
-const int wtupdt = 20000;
-const int T = 1;         /* measured in number of cycles */
-const int every = 20000;
-const int stkfrq = 1000;
-const int wrfrq = 20000;
-const int xyzfrq = 100;
-const int chkfrq = 50;  
-const int globfrq = 500;  
+long seed = 1;
+const int beads = 30;
+const int wtupdt = 40000;
+const int T = 10;         /* measured in number of cycles */
+const int every = 40000;
+const int stkfrq = 100;
+const int wrfrq = 40000;
+const int xyzfrq = 2000;
+const int globfrq = 10;
+const int chkfrq = 10;  
 const int tres = 1000;
 const int nemerg = NEMERG_c;
-const double tmin = 100.;
-const double tmax = 400.;
+const double tmin = 50.;
+const double tmax = 300.;
 
 const double s = 2.e-3;
 const double frac = 0.1;
 const double wfrac = 1.0;
 const double kappa = 0.1;
 
-const double grav = 0.06;
+const double grav = 0.08;
 const double tstep = 0.1;
 const double beta = 10./6.;
 
@@ -76,5 +77,5 @@ empoint_t emerg[NEMERG_c];
 
 opoint_t basin[2];
 double bwidth = 10.;
-double bmin = 110.;
-double bmax = 265.;
+double bmin = 140.;
+double bmax = 255.;
