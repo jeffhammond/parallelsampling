@@ -37,10 +37,10 @@
    INC=$(GA_INC) $(MPI_INC)
 
    CC=mpixlc_r
-   CFLAGS=-g -pg $(INC) $(OMPI_FLAGS)
+   CFLAGS=-O0 -g $(INC) $(OMPI_FLAGS)
 
    LD=mpixlf90_r
-   LDFLAGS=-g -pg $(LIB) $(OMPI_FLAGS)
+   LDFLAGS=-O0 -g $(LIB) $(OMPI_FLAGS)
 
 #############################################
 #
@@ -58,8 +58,8 @@ nrutil.o: nrutil.c nrutil.h
 flow_ga.x: flow_ga.o myCoordServer.o nrutil.o
 	$(LD) flow_ga.o myCoordServer.o nrutil.o $(LDFLAGS) -o flow_ga.x
 
-flow_ga.o: flow_ga_omp.c neusglob.h
-	$(CC) -c flow_ga_omp.c $(CFLAGS) -o flow_ga.o
+flow_ga.o: flow_ga_wall.c neusglob.h
+	$(CC) -c flow_ga_wall.c $(CFLAGS) -o flow_ga.o
 
 myCoordServer.o: myCoordServer.c myCoordServer.h
 	$(CC) -c myCoordServer.c $(CFLAGS) -o myCoordServer.o
