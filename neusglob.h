@@ -76,6 +76,6 @@ typedef struct _fluxlist_t
 empoint_t emerg[NEMERG_c];
 
 opoint_t basin[2];
-double bwidth = 10.;
+double bwidth = 1.;
 double bmin = 140.;
-double bmax = 255.;
+double bmax = 245.;
