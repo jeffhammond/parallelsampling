@@ -1,0 +1,137 @@
+\documentclass[final]{beamer}
+\mode<presentation>
+  {
+    \usetheme{Bright}
+  }
+  \usepackage{times}
+  \usepackage{amsmath,amsthm, amssymb, latexsym}
+  \usepackage[english]{babel}
+  \usepackage[latin1]{inputenc}
+  \usepackage[size=custom,width=74,height=110,scale=1.0,debug]{beamerposter} % dimension in centimeters
+
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \graphicspath{}
+  \title{Evaluating one-sided programming models for GPU cluster computations}
+  \author{Jeff R. Hammond and A. Eugene De Prince III}
+  \institute{Argonne National Laboratory}
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \begin{document}
+    \begin{columns}[t]
+      \begin{column}{.33\linewidth}
+        \begin{block}{\Large Introduction} \large
+            Background: Correlated electronic structure methods, especially coupled-cluster theory, make heavy use of dense linear algebra (i.e. \texttt{DGEMM}) in the course of computing tensor contractions.  Due to the overall flop-to-mop ratio of these procedures, quantum chemistry codes should be well-suited for accelerator-based supercomputers, such as OLCF-3.  A second reason to believe quantum chemistry codes will perform well on such machines is the demonstration of atomic-integral evaluations.
+            \vskip1ex
+            Hypothesis: The performance of parallel quantum chemistry will be determined by the ability to overlap intra-node memory operations --- specifically host-to-device and device-to-host copying --- with computation.  We specifically seek to understand how NWChem can be optimally ported to GPU-based supercomputers by exploring the relationship between the Global Arrays and CUDA APIs.
+        \end{block}
+        \begin{block}{Software Architecture Overview}
+            \begin{columns}[t]
+                \begin{column}{.46\linewidth}
+                    TCE is the NWChem module containing the most comprehensive set of quantum many-body methods available in any chemistry code.  While it is possible to integrate CUDA kernels directly into the TCE module, this requires unsustainable developer effort.
+                    \begin{figure}[hctp]
+                        \includegraphics[width=1.0\columnwidth,angle=0]{images/old_arch.pdf}
+                        \caption{Current software architecture of NWChem coupled-cluster codes running on GPUs.}
+                        \label{fig:old_arch}
+                    \end{figure}
+                \end{column}
+                \begin{column}{.46\linewidth}
+                    \begin{figure}[hctp]
+                        \includegraphics[width=1.0\columnwidth,angle=0]{images/new_arch.pdf}
+                        \caption{Desired software architecture for GPU-oriented coupled-cluster codes.}
+                        \label{fig:new_arch}
+                    \end{figure}
+                    A more desirably option would be to hide the complexity of CUDA memory operations within the Global Arrays library, which already does all of the memory-management and communication within NWChem.
+                \end{column}
+            \end{columns}
+            % This abstraction mechanism would allow chemists to focus on method development and scientific applications, rather than low-level programming.
+        \end{block}
+        \begin{block}{\texttt{GEMM} performance}
+            \begin{columns}[t]
+                \begin{column}{.46\linewidth}
+                    \begin{figure}[hctp]
+                        \includegraphics[width=0.99\columnwidth,angle=0]{images/dirac_sgemm.pdf}
+                    \end{figure}
+                \end{column}
+                \begin{column}{.46\linewidth}
+                    \begin{figure}[hctp]
+                        \includegraphics[width=0.99\columnwidth,angle=0]{images/dirac_dgemm.pdf}
+                    \end{figure}
+                \end{column}
+            \end{columns}
+            Performance for GPU is based upon timing inclusive of memory movement.
+        \end{block}
+      \end{column}
+      \begin{column}{.33\linewidth}
+        \begin{block}{Why does memory registration matter?}
+            ARMCI is a one-sided communication framework which utilizes hardware RDMA support whenever possible.  Zero-copy is much more efficient for obvious reasons but such transfers require memory registration because (1) the memory must not be paged to disk,  and (2) the NIC must know the physical, not virtual, address so that it can bypass the kernel during communication.
+            \vskip1ex
+            CUDA also supports registered memory segments, which are required for asynchronous transfers (for the same reasons as ARMCI).
+            \begin{figure}[hctp]
+                \includegraphics[width=0.9\columnwidth,angle=0]{images/fermi_transfer.pdf}
+                % \caption{Transfer bandwidth with Fermi.}
+                \label{fig:bandwidth}
+            \end{figure}
+            The impact of unregistered memory on ARMCI performance is significantly less for, but becomes pathological at large scale (submitted to HiPC).  A second issue is that CUDA asynchronous memory transfer operations can only be applied to registered memory segments.
+            \vskip1ex
+            {\bf \it One must choose between zero-copy one-sided inter-node communication and bandwidth-optimal asynchronous intra-node communication until CUDA supports registration of previously allocated memory.}
+        \end{block}
+%         \begin{block}{Tiling}
+%             \begin{figure}[hctp]
+%                 \includegraphics[width=0.50\columnwidth,angle=0]{images/data.pdf}
+%             \end{figure}
+%         \end{block}
+%         \begin{block}{Preliminary GPU coupled-cluster}
+%             \begin{figure}[hctp]
+%                 \includegraphics[width=0.65\columnwidth,angle=0]{images/polyacetylene.pdf}
+%             \end{figure}
+%         \end{block}
+        \begin{block}{How close are we to CCSD(T) at OLCF-3?}
+            \begin{columns}[t]
+                \begin{column}{.35\linewidth}
+                    We have shown that it is possible to hide almost all transfer cost for sufficiently large matrices.
+                    \vskip1ex
+                    Matching ``magic numbers'' to antisymmetric 4D tensors is more complicated than square matrices.
+                    \vskip1ex
+                    Strong-scaling a huge challenge since no improvement for small matrices.  Must trade scaling for overall efficiency by giving up dynamic load-balancing in order to prefetch from the network aggressively.
+                \end{column}
+                \begin{column}{.58\linewidth}
+                    ~~~~~~~~~~~Preliminary single-GPU implementation \\ ~~~~~~~~~~~performs great!
+                    \begin{figure}[hctp]
+                        \includegraphics[width=0.98\columnwidth,angle=0]{images/polyacetylene.pdf}
+                    \end{figure}
+                \end{column}
+            \end{columns}
+        \end{block}
+      \end{column}
+      \begin{column}{.33\linewidth}
+        \begin{block}{Parallel matrix-matrix multiplication performance}
+            Results from Lincoln demonstrated the superiority of GPU-based parallel matrix-matrix multiplication although the overall efficiency was not ideal.
+            \vskip1ex
+            Asynchronity was key in improving performance for larger matrices by hiding communication.  The ``mildly asynchronous'' data represents a direct substitute of CPU with GPU BLAS with very little overlap possible, whereas the ``fully asynchronous'' algorithm was rescheduled to optimized overlap.
+            \begin{columns}[t]
+                \begin{column}{.46\linewidth}
+                    \begin{figure}[hctp]
+                        \includegraphics[width=1.1\columnwidth,angle=0]{images/ga_cpu_gpu_sgemm.pdf}
+                        % \caption{Comparison of parallel MMM for various node counts using CPUs or GPUs.}
+                        % \label{fig:parallel1}
+                    \end{figure}
+                \end{column}
+                \begin{column}{.46\linewidth}
+                    \begin{figure}[hctp]
+                        \includegraphics[width=1.1\columnwidth,angle=0]{images/lincoln_ga_gpu_sgemm.pdf}
+                        % \caption{Comparison of two different implementations of parallel MMM on 8 nodes.}
+                        % \label{fig:parallel2}
+                    \end{figure}
+                \end{column}
+            \end{columns}
+            \vskip4ex
+            Multiplication of rank 16384 matrices on the Fermi cluster at NERSC achieves better than 300 GF per node on 8 nodes (2 ppn), when the serial performance is 240 GF including transfer time and 330 GF otherwise, indicating excellent overlap between computation and memory transfer when two processes share a single GPU.
+            \begin{figure}[hctp]
+                \includegraphics[width=1.0\columnwidth,angle=0]{images/dirac_sgemm_scaling.pdf}
+            \end{figure}
+            The large variation in performance with block size on Dirac is due to load-imbalance.  There is a significant challenge in finding optimal blocksizes given the need to have ``magic number'' matrix sizes for GPU computations, while still maintaining an even distribution of data and computation across nodes.
+            \vskip1ex
+            A production implementation will require a significant amount of bookkeeping code.
+        \end{block}
+      \end{column}
+    \end{columns}
+  \end{document}
