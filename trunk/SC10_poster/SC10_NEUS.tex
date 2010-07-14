@@ -9,6 +9,10 @@
   \usepackage[latin1]{inputenc}
   \usepackage[size=custom,width=74,height=110,scale=1.0,debug]{beamerposter} % dimension in centimeters
 
+
+% coordserver contains a family of functions that create coordinate servers, and perform GA puts and gets.  the creation functions were not modified from the ones you gave me except I made two separate ones, one for double and one for ints.  The puts and gets are slightly more easy-to-use versions of NGA_Get and NGA_Put that return either a single value of a 2D array (I made all of my arrays 2-dimensional, with the first limit being 2, just because all of them were of that form anyway...), or, if the second array index is -1, return a whole half of the array.  Later on as I became more comfortable I started calling the NGA_Gets and puts directly, when I needed the whole array, that way I wouldn’t have to call it twice
+
+
   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   \graphicspath{}
   \title{Non-equilibrium Umbrella Sampling on BlueGene/P using One Sided Communication}
@@ -47,7 +51,7 @@
 	    \end{column}
 	    \begin{column}{.25\linewidth}
 	      \begin{figure}
-		\includegraphics[width=2 in]{images/patch.pdf}
+% 		\includegraphics[width=2 in]{images/patch.pdf}
 	      \end{figure}
 	    \end{column}
 	  \end{columns}
