@@ -84,7 +84,7 @@ double globtim=0.;
 int nglobtim=0;
 int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2;
 int *tnwstack1, *tnwstack2, *tmpfrom, **allcnt, **allon;
-int verb=3;
+int verb=2;
 int me, nproc, status, beadsp2, beadsp3, lockind, lo[2], hi[2], ld[1];
 double tstepsq, tempw[1];
 
@@ -171,7 +171,7 @@ int main(int argc,char** argv){
   int op, dir1, dir2, from, to, rem, limit, pt, bead1, bead2;
   int lat, dir, bead, tcount;
   int rc, maxsize, ind, flag, mcount, it1, it2;
-  int cycle, endcycle, gotmin;
+  int cycle, endcycle, gotmin, tmpswitch;
   unsigned int iseed = (unsigned int)time(NULL);
   void back(int lat, int dir, int bead);
   void createservers(), initvar();
@@ -190,6 +190,7 @@ int main(int argc,char** argv){
   FILE * ratFile, *filein;
 
   ld[0] = 0;
+  tmpswitch = 0;
 
   if (seed ==0) {
       seed = iseed;
@@ -512,7 +513,8 @@ int main(int argc,char** argv){
 	  xyzout = fopen(filename,"w");
 	  fprintf(xyzout,"%i \n polymer movie\n", npart);
 	}
-	
+
+	endtraj = 0;
 	if (((tcount != 0) || (strcmp(fxname,"NOREAD") != 0))|| (cycle!=1)) {
 	  back(lat,dir,bead);  /* initialize trajectory */
 	  ind = dir*beads + bead;
@@ -530,9 +532,7 @@ int main(int argc,char** argv){
 	  myclock = 0;
 	}
 	
-	endtraj = 0;
-	while (!endtraj) {
-	  
+	while (!endtraj) { 
 	  allind[0] = lat;
 	  allind[1] = dir*beads + bead;
 	  tcount = chkfrq + NGA_Read_inc(Coords_count.ga,allind,chkfrq);
@@ -602,7 +602,7 @@ int main(int argc,char** argv){
 	}  /* end of trajectory loop */
 	if ((verb >= 3) || ((verb >=2) && (me == 0))) {
 	  mainout = fopen(outname,"a");
-	  fprintf(mainout,"Count on %d %d %d, is now = %d\n",lat,dir,bead,tempi[0]);
+	  fprintf(mainout,"Count on %d %d %d, is now = %d\n",lat,dir,bead,tcount);
 	  fclose(mainout);
 	}
       }
@@ -614,7 +614,7 @@ int main(int argc,char** argv){
       if (me == 0) {
 	
 	if (verb >= 2) {
-	  printf("Moving string..\n",cycle);
+	  printf("Moving string..\n");
 	}
 	string();
 	wrpath(cycle);
@@ -697,6 +697,139 @@ int main(int argc,char** argv){
 
       if ((cycle*every)%wrfrq == 0) {
 	wrextend((cycle*every)/wrfrq);
+      }
+
+      /* write fluxes */
+  
+      sprintf(outname,"%s%d%s","tflux", tmpswitch, ".dat");
+      outFile = fopen(outname,"w");
+      for (i=0;i<=1;i++) {
+	for (j=0; j<=1; j++) {
+	  for (k=0; k<=beads-1; k++) {
+	    if ((i == 0) || (k!=beads-1)) {
+	      fprintf(outFile,"%d %d %d\n",i,j,k);
+	      ind = j*beads + k;
+	      //LINE_STAMP;
+	      GetFromServer_int(&Coords_full,i,ind,tempi);
+	      if (tempi[0] == 1) {
+		limit = mxlist;
+	      } else {
+		//LINE_STAMP;
+		GetFromServer_int(&Coords_nlist,i,ind,tempi);
+		limit = tempi[0];
+	      }
+	      
+	      //LINE_STAMP;
+	      GetFromServer_dbl(&Coords_twlist,i,ind,tempw);
+	      fprintf(outFile,"%d %e\n", limit, tempw[0]);
+	      
+	      for (pt=0; pt<limit; pt++) {
+		ind = 2*mxlist*beads*j + 2*mxlist*k + 2*pt;
+		//LINE_STAMP;
+		GetFromServer_int(&Coords_from,i,ind,tempi);
+		//LINE_STAMP;
+		GetFromServer_int(&Coords_from,i,ind+1,tempi2);
+		fprintf(outFile,"%d %d ", tempi[0], tempi2[0]);
+		
+		ind = mxlist*beads*j + mxlist*k + pt;
+		//LINE_STAMP;
+		GetFromServer_dbl(&Coords_wlist,i,ind,tempw);
+		//LINE_STAMP;
+		GetFromServer_int(&Coords_clock,i,ind,tempi);
+		fprintf(outFile,"%e %d ",tempw[0],tempi[0]);
+		GetFromServer_int(&Coords_mytim,i,ind,tempi);
+		fprintf(outFile,"%d ",tempi[0]);
+		
+		lo[0] = i;
+		hi[0] = i;
+		lo[1] = 3*npart*ndim*mxlist*beads*j + 3*npart*ndim*mxlist*k + 3*npart*ndim*pt;
+		hi[1] = 3*npart*ndim*mxlist*beads*j + 3*npart*ndim*mxlist*k + 3*npart*ndim*(pt+1) -1;
+		NGA_Get(Coords_pts.ga,lo,hi,tpt,ld);
+		
+		mcount = 0;
+		for (part=0; part<npart;part++) {
+		  for (dim=0; dim<=ndim-1; dim++) {
+		    fprintf(outFile,"%e ", tpt[mcount]);
+		    mcount++;
+		    fprintf(outFile,"%e ", tpt[mcount]);
+		    mcount++;
+		    mcount++;
+		  }
+		}
+		fprintf(outFile,"\n");
+	      }
+	    }
+	  }
+	}
+      }
+      fclose(outFile);
+      
+      /* write probs */
+      
+      GetFromServer_int(&Coords_nprob,0,-1,tnprob1);
+      //LINE_STAMP;
+      GetFromServer_int(&Coords_nprob,1,-1,tnprob2);
+      //LINE_STAMP;
+      GetFromServer_int(&Coords_prob,0,-1,tprob1);
+      //LINE_STAMP;
+      GetFromServer_int(&Coords_prob,1,-1,tprob2);
+      
+      sprintf(outname,"%s%d%s","tprob", tmpswitch, ".dat");
+      outFile = fopen(outname,"w");
+      for (lat=0;lat<=1;lat++) {
+	for (dir=0; dir<=1; dir++) {
+	  for (bead=0; bead<=beads-1; bead++) {
+	    for (n1=0; n1<2; n1++) {
+	      for (n2=0; n2<=beads-1; n2++) {
+		it1 = getnprob(lat,dir,bead,n1,n2);
+		if (it1 != 0) {
+		  fprintf(outFile,"%d %d %d %d %d %d\n",lat,dir,bead,n1,n2,it1);
+		  for (i=0; i<2; i++) {
+		    for (j=0; j<=beads-1; j++) {
+		      it2 = getprob(lat,dir,bead,n1,n2,i,j);
+		      if (it2 != 0) {
+			fprintf(outFile,"%d %d %d\n",i,j,it2);
+		      }
+		    }
+		  }
+		}
+	      }
+	    }
+	  }
+	}
+      }
+      fclose(outFile);
+      
+      /* write tau data */
+      
+      GetFromServer_int(&Coords_ntau,0,-1,tint1);
+      //LINE_STAMP;
+      GetFromServer_int(&Coords_ntau,1,-1,tint2);
+      //LINE_STAMP;
+      GetFromServer_dbl(&Coords_tau,0,-1,ttau1);
+      //LINE_STAMP;
+      GetFromServer_dbl(&Coords_tau,1,-1,ttau2);
+      
+      sprintf(outname,"%s%d%s","ttau",tmpswitch,".dat");
+      outFile = fopen(outname,"w");
+      for (lat=0;lat<=1;lat++) {
+	mcount = 0;
+	for (dir=0; dir<=1; dir++) {
+	  for (bead=0; bead<=beads-1; bead++) {
+	    if (lat==0) {
+	      fprintf(outFile,"%f %d\n",ttau1[mcount],tint1[mcount]);
+	    } else {
+	      fprintf(outFile,"%f %d\n",ttau2[mcount],tint2[mcount]);
+	    }
+	    mcount++;
+	  }
+	}
+      }
+      fclose(outFile);
+      if (tmpswitch==0) {
+	tmpswitch=1;
+      } else {
+	tmpswitch=0;
       }
       printf("proc %d: done TCOB\n",me); fflush(stdout);
     }
@@ -954,6 +1087,7 @@ void back (int lat, int dir, int bead) {
     GA_Fence();
     GA_Unlock(lockind);
     
+    ttwlist = 0.;
     if (tnlist != 0) {
       sum = 0.;
       oran = ran2(&seed);
@@ -970,7 +1104,7 @@ void back (int lat, int dir, int bead) {
       GetFromServer_dbl(&Coords_twlist,lat,ind,tempw);
       ttwlist = tempw[0];
       
-      if (ttwlist <= 0) {
+      if (ttwlist < 0) {
 	printf("proc %d:  twlist < 0!! %e, lat,dir,bead = %d %d %d\n", me, ttwlist, lat, dir, bead);
 	printf("proc %d:  nlist = %d; full = %d\n", me, tnlist, tfull);
 	if (tfull) {
@@ -986,10 +1120,13 @@ void back (int lat, int dir, int bead) {
 	tempw[0] = sum;
 	ind = dir*beads + bead;
 	PutToServer_dbl(&Coords_twlist,lat,ind,tempw);
+	ttwlist = tempw[0];
       }
+    }
+
+    if ((tnlist !=0) && (ttwlist !=0.)) {
 
       a *= ttwlist;
-
       j = 1;
       while (sum < a) {
 	if ((!tfull) && (j > tnlist)) {  /* nlist is the actual number of points in the list */
@@ -1112,7 +1249,7 @@ void back (int lat, int dir, int bead) {
       if (verb >= 2) {
 	printf("proc %d:  Error:  Replica reinitialized in wrong region!\n",me);
 	printf("which(%d,%d) = %d\n", lat, dir, newreg);
-	printf("opoint: %e %e %e\n",ocoor.x[0],z[lat][dir][bead],z[lat][dir][newreg]);
+	printf("opoint: %e %e %e\n",ocoor.x[0],z[lat][dir][bead].x[0],z[lat][dir][newreg].x[0]);
 	printf("rank is %d; j is %d; lat,dir,bead are (%d,%d,%d) \n", me, j, lat,dir,bead);
 	printf("tnlist: %d, oran: %e\n",tnlist,oran);
 	printf("from: %d %d\n",rstart[0],rstart[1]);
@@ -2327,7 +2464,7 @@ int getmin(int *lat, int *dir, int *bead) {
     }
   }
 
-  if (sum > 0) {
+  if (sum > 0) { // sum is the total number of steps outstanding
     rnd = (float)sum*ran2(&seed);
     
     sum = 0;
@@ -2352,14 +2489,20 @@ int getmin(int *lat, int *dir, int *bead) {
 	}
       }
     }
+    if (!gotit) {
+      printf("proc %d: sum error (sum,rnd) = (%d,%f) \n",me,sum,rnd); fflush(stdout);
+      ti = 1;
+      tj = 1;
+      tk = beads-2;
+    }
     *lat = ti;
     *dir = tj;
     *bead = tk;
+    low = count[ti][tj][tk];
   } else {
     *lat = -1;           /* all regions have run for 'every' steps */
   }
 
-  low = count[ti][tj][tk];
   return low;
 }
 /*-------------------------------------------------------------------------*/
@@ -2962,18 +3105,17 @@ void rdsolv(){
   FILE *filein;
   int j, k, good, ind;
   double temp, nudge=1.e-4, rx;
-  char stemp[30];
-
+  float tw;
   filein = fopen(sname,"r");
 
   for (j=0; j<N; j++) {
     for (k=0; k<3; k++) {
-      fscanf(filein,"%s",&stemp);
-      rsolv[j][k] = atof(stemp);
+      fscanf(filein,"%f",&tw);
+      rsolv[j][k] = tw;
     }
     for (k=0; k<3; k++) {
-      fscanf(filein,"%s",&stemp);
-      vsolv[j][k] = atof(stemp);
+      fscanf(filein,"%f",&tw);
+      vsolv[j][k] = tw;
     }
     good = 0;
     while (!good) {
@@ -3013,17 +3155,17 @@ void rdemerg(){
 
   FILE *filein;
   int j, part, dim;
-  char stemp[30];
+  float tw;
 
   filein = fopen(emname,"r");
 
   for (j=0;j<nemerg;j++) {
-    fscanf(filein,"%s",&stemp);
-    emerg[j].op = atof(stemp);
+    fscanf(filein,"%f",&tw);
+    emerg[j].op = tw;
     for (part=0;part<npart;part++) {
       for (dim=0;dim<ndim;dim++) {
-	fscanf(filein,"%s",&stemp);
-	emerg[j].x[part][dim] = atof(stemp);
+	fscanf(filein,"%f",&tw);
+	emerg[j].x[part][dim] = tw;
       }
       for (dim=0;dim<ndim;dim++) {
 	emerg[j].v[part][dim] = sqrt(-var2*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
@@ -3144,7 +3286,7 @@ void dorotate() {
 	if (!good) {
 	    maxd += 5;
 	    free(lab);
-	    printf("proc %d: Increasing maxd to %d\n",me,maxd);
+	    //	    printf("proc %d: Increasing maxd to %d\n",me,maxd);
 	    lab = (int ****) alloc4d(sizeof(int),nx,ny,nz,maxd);
 	    for (j=0;j<nx;j++) {
 		for (k=0;k<ny;k++) {
@@ -3191,7 +3333,7 @@ void dorotate() {
     } /* end of parallel region */
     
     if (err) {
-	printf("Polymer outside of box! x[%d] = (%e,%e,%e)\n",erri,pos_poly[erri][0],pos_poly[erri][1],pos_poly[erri][2]);	      
+	printf("Polymer outside of box! x[%d] = (%d,%d,%d)\n",erri,pos_poly[erri][0],pos_poly[erri][1],pos_poly[erri][2]);	      
 	polyerr = 1;
     }
 
