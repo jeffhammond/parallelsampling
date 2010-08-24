@@ -25,22 +25,20 @@
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   GA_PREFIX=/gpfs/home/projects/nwchem/ga-alex
+   GA_PREFIX=/home/projects/nwchem/ga-cvs-dev
    GA_INC=-I$(GA_PREFIX)/include
    GA_LIB=-L$(GA_PREFIX)/lib/BGP -lglobal -lma -larmci -ltcgmsg-mpi -llinalg
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   OMPI_FLAGS=-qsmp=omp
-
    LIB=$(GA_LIB) $(MPI_LIB) $(EXTRAS)
    INC=$(GA_INC) $(MPI_INC)
 
    CC=mpixlc_r
-   CFLAGS=-O3 -g $(INC) $(OMPI_FLAGS)
+   CFLAGS=-g -O0 $(INC)
 
    LD=mpixlf90_r
-   LDFLAGS=-O3 -g $(LIB) $(OMPI_FLAGS)
+   LDFLAGS=-g -O0 $(LIB)
 
 #############################################
 #
@@ -58,8 +56,8 @@ nrutil.o: nrutil.c nrutil.h
 flow_ga.x: flow_ga.o myCoordServer.o nrutil.o
 	$(LD) flow_ga.o myCoordServer.o nrutil.o $(LDFLAGS) -o flow_ga.x
 
-flow_ga.o: flow_ga_wall.c neusglob.h
-	$(CC) -c flow_ga_wall.c $(CFLAGS) -o flow_ga.o
+flow_ga.o: flow_one.c neusglob.h
+	$(CC) -c flow_one.c $(CFLAGS) -o flow_ga.o
 
 myCoordServer.o: myCoordServer.c myCoordServer.h
 	$(CC) -c myCoordServer.c $(CFLAGS) -o myCoordServer.o
