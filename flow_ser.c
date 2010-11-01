@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include "../nrutil.h"
 #include "../nr.h"    /* numerical recipes: for GJ elim */
-#include "neusglob.h"
+#include "serglob.h"
 #include "../aryeh.h"
 #include "../myCoordServer.h"
 
@@ -85,9 +85,7 @@ double sigfacsq=4.;
 char crname[70]="../cutRNAin.dat";      // crystal structure file
 char secname[70]="../cutRNAsec.con";    // secondary contacts
 char tertname[70]="../cutRNAtert.con";  // tertiary contacts
-char emname[30]="../emerg05.dat";         // emergency points
-char ptname[30]="allpt.dat";         // points
-char iwtname[30]="iweight";         // weights
+char ptname[30]="ipts_refold5.dat";         // points
 char sname[30]="isolv";         // emergency points
 char filename[30];         // emergency points
 double **r0, **r02, **r0d6, **r0d12, **nextstep, **r0dists, **rdists, ***vsolv, ***rsolv, ***f1;
@@ -177,7 +175,7 @@ int main(int argc,char** argv){
   void stack(), wrpath(int ind);
   void strread();
   void wrextend(int index);
-  void rddelta(), rdcryst(), rdsolv(), rdemerg();
+  void rddelta(), rdcryst(), rdsolv();
   double rate[2], sum1, sum2, t1, t2, telaps, alpha, *tgt, *rrnd;
   FILE * ratFile, *filein, *ffile, *ptout;
     
@@ -371,7 +369,7 @@ int main(int argc,char** argv){
 
     mcount = 0;
     mainout = fopen(ptname,"r");
-    lim = 16;
+    lim = 35;
     if (lim < nproc*per) {
       printf("not enough points!\n");
       gaexit(2);
@@ -388,13 +386,13 @@ int main(int argc,char** argv){
 	    printf("Error!  me = %d, ind = %d!",me, ind);
 	    gaexit(2);
 	  }
-	  dir[ind] = 1;
-	  bead[ind] = 19;
-	  rstart[ind][0] = 0;
-	  rstart[ind][1] = 19;
-	  /*	  fscanf(mainout,"%d %d ", &tempi[0], &tempi2[0]);
-	  fscanf(mainout,"%f %d ",&tw,&tempi[0]);
-	  fscanf(mainout,"%d ",&tempi[0]);*/
+	  dir[ind] = 0;
+	  bead[ind] = 0;
+	  rstart[ind][0] = 1;
+	  rstart[ind][1] = 0;
+	  fscanf(mainout,"%d %d ", &tempi[0], &tempi2[0]);
+	  fscanf(mainout,"%f %d ",&tf1,&tempi[0]);
+	  fscanf(mainout,"%d ",&tempi[0]);
 
 	  for (part=0; part<npart;part++) {
 	    for (dim=0; dim<=ndim-1; dim++) {
@@ -405,9 +403,9 @@ int main(int argc,char** argv){
 	    }
 	  }
 	} else {
-	  /*	  fscanf(mainout,"%d %d ", &tempi[0], &tempi2[0]);
-	  fscanf(mainout,"%f %d ",&tw,&tempi[0]);
-	  fscanf(mainout,"%d ",&tempi[0]);*/
+	  fscanf(mainout,"%d %d ", &tempi[0], &tempi2[0]);
+	  fscanf(mainout,"%f %d ",&tf1,&tempi[0]);
+	  fscanf(mainout,"%d ",&tempi[0]);
 
 	  for (part=0; part<npart;part++) {
 	    for (dim=0; dim<=ndim-1; dim++) {
@@ -1500,57 +1498,6 @@ void rdsolv(){
     }
   }
 }
-/*-----------------------------------------------------------------------------*/
-void rdemerg(){
-
-  FILE *filein;
-  int j, part, dim, ind;
-  float ttw;
-  opoint_t tx;
-  point_t px;
-  
-  filein = fopen(emname,"r");
-
-  for (j=0;j<nemerg;j++) {
-    fscanf(filein,"%f",&ttw);
-    emerg[j].op = ttw;
-    for (part=0;part<npart;part++) {
-      for (dim=0;dim<ndim;dim++) {
-	fscanf(filein,"%f",&ttw);
-	//	if (part < npart) {
-	emerg[j].x[part][dim] = ttw;
-	px.x[part][dim] = ttw;
-	//	}
-      }
-      for (dim=0;dim<ndim;dim++) {
-	//fscanf(filein,"%f",&ttw);
-	emerg[j].v[part][dim] = sqrt(-var2*2.*log(ran2(&seed)))*cos(twoPi*ran2(&seed));
-	//emerg[j].v[part][dim] = ttw;
-      }
-      /*      for (dim=0;dim<ndim;dim++) {
-	fscanf(filein,"%f",&ttw);
-	emerg[j].f1[part][dim] = ttw;
-	}*/
-    }
-    // addpoint(lat,dir,bead,coor,tempw[0],rstart[0],rstart[1]);
-    tx = projx(px);
-    emerg[j].op = tx.x[0];
-  }
-  fclose(filein);
-
-  for (j=0;j<per;j++) {
-    ind = floor(nemerg*ran2(&seed)) + 1;
-    for (part=0;part<npart;part++) {
-      for (dim=0;dim<ndim;dim++) {
-	coor[j].x[part][dim] = emerg[ind].x[part][dim];
-	coor[j].v[part][dim] = emerg[ind].v[part][dim];
-	//f1[j][part][dim] = emerg[ind].f1[part][dim];
-      }
-    }
-    ocoor[j] = projx(coor[j]);
-  }
-}
-
 /*-----------------------------------------------------------------------------*/
 void stream(int jj) {
   
