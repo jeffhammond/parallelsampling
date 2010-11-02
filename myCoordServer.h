@@ -9,7 +9,7 @@
 #include <time.h>
 
 #include "macdecls.h"
-#include "../armci-portals/src/armci.h"
+#include "armci.h"
 #include "sndrcv.h"
 #include "ga.h"
 #include "mpi.h"

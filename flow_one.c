@@ -218,13 +218,13 @@ int main(int argc,char** argv){
 
   MPI_Comm_rank(MPI_COMM_WORLD,&me);
   MPI_Comm_size(MPI_COMM_WORLD,&nproc);
-  printf("proc %d: MPI_Init done\n",me); fflush(stdout);
+  //  printf("proc %d: MPI_Init done\n",me); fflush(stdout);
   
   GA_Initialize();
-  printf("proc %d: GA_Initialize done\n",me); fflush(stdout);
+  //  printf("proc %d: GA_Initialize done\n",me); fflush(stdout);
   
   MA_init(MT_DBL, 128*1024*1024, 16*1024*1024);
-  printf("proc %d: MA_init done\n",me); fflush(stdout);
+  //  printf("proc %d: MA_init done\n",me); fflush(stdout);
 
   createservers();
 
