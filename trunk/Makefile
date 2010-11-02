@@ -25,20 +25,24 @@
 
    #EXTRAS=-lgfortran -lm -lpthread
 
-   GA_PREFIX=/home/projects/nwchem/ga-cvs-dev
+   GA_PREFIX=/home/projects/nwchem/ga-alex
    GA_INC=-I$(GA_PREFIX)/include
-   GA_LIB=-L$(GA_PREFIX)/lib/BGP -lglobal -lma -larmci -ltcgmsg-mpi -llinalg
+   GA_LIB=-L$(GA_PREFIX)/lib/BGP -lglobal -lma -larmci -ltcgmsg-mpi -llinalg -lgfortran
 
    #EXTRAS=-lgfortran -lm -lpthread
+
+##   OMP_FLAGS=-qsmp=omp
 
    LIB=$(GA_LIB) $(MPI_LIB) $(EXTRAS)
    INC=$(GA_INC) $(MPI_INC)
 
-   CC=mpixlc_r
-   CFLAGS=-g -O0 $(INC)
+   CC=tau_cc.sh
+   CFLAGS=-O0 $(INC) $(OMP_FLAGS)
 
-   LD=mpixlf90_r
-   LDFLAGS=-g -O0 $(LIB)
+   LD=tau_f90.sh
+   LDFLAGS=-O0 $(LIB) $(OMP_FLAGS)
+
+   MYPATH=/home/adickson/parallelsampling
 
 #############################################
 #
@@ -50,17 +54,17 @@ all: flow_ga.x
 
 refresh: realclean all
 
-nrutil.o: nrutil.c nrutil.h
-	$(CC) -c nrutil.c $(CFLAGS) -o nrutil.o
+nrutil.o: $(MYPATH)/nrutil.c $(MYPATH)/nrutil.h
+	$(CC) -c $(MYPATH)/nrutil.c $(CFLAGS) -o nrutil.o
 
-flow_ga.x: flow_ga.o myCoordServer.o nrutil.o
-	$(LD) flow_ga.o myCoordServer.o nrutil.o $(LDFLAGS) -o flow_ga.x
+flow_ga.x: flow_ga.o $(MYPATH)/myCoordServer.o nrutil.o
+	$(LD) flow_ga.o $(MYPATH)/myCoordServer.o nrutil.o $(LDFLAGS) -o flow_ga.x
 
-flow_ga.o: flow_one.c neusglob.h
-	$(CC) -c flow_one.c $(CFLAGS) -o flow_ga.o
+flow_ga.o: flow_ww2.c neusglob.h
+	$(CC) -c flow_ww2.c $(CFLAGS) -o flow_ga.o
 
-myCoordServer.o: myCoordServer.c myCoordServer.h
-	$(CC) -c myCoordServer.c $(CFLAGS) -o myCoordServer.o
+myCoordServer.o: $(MYPATH)/myCoordServer.c $(MYPATH)/myCoordServer.h
+	$(CC) -c $(MYPATH)/myCoordServer.c $(CFLAGS) -o myCoordServer.o
 
 clean:
 	$(RM) $(RMFLAGS) *.o
