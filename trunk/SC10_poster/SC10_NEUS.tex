@@ -30,52 +30,45 @@
           The NEUS algorithm provides a massively-parallel method to obtain important information about rare event dynamics in complex systems.  Application of NEUS to proteins modeled with explicit-atom force-fields (instead of the simple bead model considered here) would scale to many thousands of times the number of processors required for the molecular dynamics (MD) evaluation, \textit{hence many-petaflop simulation of rare events in proteins will soon be possible}.
         \end{block}
 
-	\begin{block}{Examples in higher dimensions}
-	  \textbf{Ising Model Under Shear}
-	  \begin{columns}[t]
-	    \begin{column}{.65\linewidth}
-	      In the sheared Ising model, NEUS used the average magnetization of the rows as order parameters (right).  The path evolved from an arbitrary initial guess to the neighborhood of the most probable reaction path (below). 
-	    \end{column}
-	    \begin{column}{.25\linewidth}
-	      \begin{figure}
-		\includegraphics[width=3 in]{images/cg.pdf}
-	      \end{figure}
-	    \end{column}
-	  \end{columns}
-	  \begin{figure}
- 	    \includegraphics[width=12 in]{images/rows16.pdf}
-	  \end{figure}
-	  \vspace{10 mm}
-	  \textbf{Circadian oscillator}
+%	\begin{block}{Examples in higher dimensions}
+%	  \textbf{Ising Model Under Shear}
+%	  \begin{columns}[t]
+%	    \begin{column}{.65\linewidth}
+%	      In the sheared Ising model, NEUS used the average magnetization of the rows as order parameters (right).  The path evolved from an arbitrary initial guess to the neighborhood of the most probable reaction path (below). 
+%	    \end{column}
+%	    \begin{column}{.25\linewidth}
+%	      \begin{figure}
+%		\includegraphics[width=3 in]{images/cg.pdf}
+%	      \end{figure}
+%%	    \end{column}
 
-	      In a model of circadian oscillations, NEUS used the number count of each of the 22 species as order parameters.  Forward and backward path ensembles are shown below in red and blue respectively.  The algorithm was able to recover the 24h oscillatory period.
-	      \begin{columns}[t]
-		\begin{column}{.33\linewidth}
-		  \begin{figure}
- 		    \includegraphics[width=4 in]{images/proj1umb.pdf}
-		  \end{figure}
-		\end{column}
-		\begin{column}{.33\linewidth}
-		  \begin{figure}
- 		    \includegraphics[width=4 in]{images/circpoints.pdf}
-		  \end{figure}
-		\end{column}
-		\begin{column}{.33\linewidth}
-		  \begin{figure}
- 		    \includegraphics[width=4 in]{images/proj1md.pdf}
-		  \end{figure}
-		\end{column}
+%	  \end{columns}
+%	  \begin{figure}
+% 	    \includegraphics[width=12 in]{images/rows16.pdf}
+%	  \end{figure}
+%	  \vspace{10 mm}
+%	  \textbf{Circadian oscillator}
 
-	  \end{columns}
-        \end{block}
-      \end{column}
+%	      In a model of circadian oscillations, NEUS used the number count of each of the 22 species as order parameters.  Forward and backward path ensembles are shown below in red and blue respectively.  The algorithm was able to recover the 24h oscillatory period.
+%	      \begin{columns}[t]
+%		\begin{column}{.33\linewidth}
+%		  \begin{figure}
+% 		    \includegraphics[width=4 in]{images/proj1umb.pdf}
+%		  \end{figure}
+%		\end{column}
+%		\begin{column}{.33\linewidth}
+%		  \begin{figure}
+% 		    \includegraphics[width=4 in]{images/circpoints.pdf}
+%		  \end{figure}
+%		\end{column}
+%		\begin{column}{.33\linewidth}
+%		  \begin{figure}
+% 		    \includegraphics[width=4 in]{images/proj1md.pdf}
+%		  \end{figure}
+%		\end{column}
 
-      \begin{column}{.25 \linewidth}
-%         \begin{block}{Nonequilibrium Umbrella Sampling}
-% 	  NEUS is an umbrella sampling algorithm that is applicable to nonequilibrium systems.  It divides the phase space of a system into different regions and conducts restricted simulations within each region.
-%           \vskip1ex
-%           The NEUS algorithm provides a massively-parallel method to obtain important information about rare event dynamics in complex systems.  The scalability of NEUS \textit{improves} for larger systems since the time spent on an individual sample.  Application of NEUS to proteins modeled with explicit-atom force-fields (instead of the simple bead model considered here) would scale to many thousands of times the number of processors required for the molecular dynamics (MD) evaluation.  Given the scalability of MD codes like LAMMPS and NAMD, it is reasonable to project near-exascale simulation of rare events in proteins using explicit-atom models.
-%         \end{block}
+%	  \end{columns}
+ %       \end{block}
 	\begin{block}{How it works}
 When studying trajectories of rare events, the vast majority of computational time is spent waiting for the event of interest to happen.
 NEUS is a sampling algorithm that is designed for rare events.  
@@ -108,19 +101,29 @@ To conduct the ``regional'' simulations in nonequilibrium systems, one needs to 
 	  \end{columns}
 
         \end{block}
+
+      \end{column}
+
+      \begin{column}{.25 \linewidth}
+%         \begin{block}{Nonequilibrium Umbrella Sampling}
+% 	  NEUS is an umbrella sampling algorithm that is applicable to nonequilibrium systems.  It divides the phase space of a system into different regions and conducts restricted simulations within each region.
+%           \vskip1ex
+%           The NEUS algorithm provides a massively-parallel method to obtain important information about rare event dynamics in complex systems.  The scalability of NEUS \textit{improves} for larger systems since the time spent on an individual sample.  Application of NEUS to proteins modeled with explicit-atom force-fields (instead of the simple bead model considered here) would scale to many thousands of times the number of processors required for the molecular dynamics (MD) evaluation.  Given the scalability of MD codes like LAMMPS and NAMD, it is reasonable to project near-exascale simulation of rare events in proteins using explicit-atom models.
+%         \end{block}
+
 	\begin{block}{Advanced Techniques}
 	  \textbf{Strings:}
 
 	  \begin{columns}[t]
-	    \begin{column}{.65\linewidth}
+	    \begin{column}{.45\linewidth}
 
 	  Irregular regions can be formed by Voronoi polyhedra defined using a set of phase space points (``images'') that together form a string that winds its way from reactants to products.
 	  The string is updated during sampling by periodically moving the images towards the average of the walker position in the last time interval.
 
 	    \end{column}
-	    \begin{column}{.25\linewidth}
+	    \begin{column}{.45\linewidth}
 	      \begin{figure}
-		\includegraphics[width=3 in]{images/whiteandblue.pdf}
+		\includegraphics[width=1.0\linewidth]{images/whiteandblue.pdf}
 	      \end{figure}
 	    \end{column}
 	  \end{columns}
@@ -128,7 +131,7 @@ To conduct the ``regional'' simulations in nonequilibrium systems, one needs to 
 	  \textbf{Separating the transition path ensemble:}
 
 	  \begin{columns}[t]
-	    \begin{column}{.65\linewidth}
+	    \begin{column}{.45\linewidth}
 
 	      We can also separate trajectories based on their basin of origin by defining two ensembles:  ${\cal S}_A$ for trajectories originating in basin $A$, and ${\cal S}_B$ for trajectories originating in basin $B$.
 	  This allows for a better description of transition paths that are separate due to nonequilibrium path splitting, and as a bonus, it allows for the \textbf{easy calculation of transition rates!}
@@ -140,17 +143,26 @@ To conduct the ``regional'' simulations in nonequilibrium systems, one needs to 
 
 	  where $\overline{\Phi}_{B \mid {\cal S}_A}$ is the flux into basin $B$ from the ${\cal S}_A$ ensemble, and $\overline{h}_A$ is the total weight of all regions in ${\cal S}_A$.
 	    \end{column}
-	    \begin{column}{.25\linewidth}
+	    \begin{column}{.45\linewidth}
 	      \begin{figure}
- 		\includegraphics[width=3 in]{images/contvorf.pdf}
+ 		\includegraphics[width=0.5\linewidth]{images/contvorf.pdf}
 	      \end{figure}
 	      \begin{figure}
- 		\includegraphics[width=3 in]{images/contvorr.pdf}
+ 		\includegraphics[width=0.5\linewidth]{images/contvorr.pdf}
 	      \end{figure}
 	    \end{column}
 	  \end{columns}
 	  
         \end{block}
+
+	\begin{block}{Efficiency comparisons}
+	  NEUS outperforms a competing method (Forward Flux Sampling, or FFS) when long-lived intermediate states are present.  Both methods outperform conventional sampling (CONV) when the transitions are sufficiently rare.
+	  Here are efficiency results from the circular model potential shown above, where $/beta$ is the inverse temperature, and transitions become more rare as $\beta$ increases.
+	  \begin{figure}
+	    \includegraphics[width=0.5\linewidth]{images/master.pdf}
+	  \end{figure}
+	\end{block}
+
       \end{column}
 
       \begin{column}{.25 \linewidth}
