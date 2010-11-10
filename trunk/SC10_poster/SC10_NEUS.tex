@@ -77,16 +77,16 @@
 %           The NEUS algorithm provides a massively-parallel method to obtain important information about rare event dynamics in complex systems.  The scalability of NEUS \textit{improves} for larger systems since the time spent on an individual sample.  Application of NEUS to proteins modeled with explicit-atom force-fields (instead of the simple bead model considered here) would scale to many thousands of times the number of processors required for the molecular dynamics (MD) evaluation.  Given the scalability of MD codes like LAMMPS and NAMD, it is reasonable to project near-exascale simulation of rare events in proteins using explicit-atom models.
 %         \end{block}
 	\begin{block}{How it works}
-	  The system does not obey detailed balance 
-	  \begin{equation*}
-	    P(\text{A})p(\text{A} \rightarrow \text{B}) \neq P(\text{B})p(\text{B} \rightarrow \text{A}) 
-	  \end{equation*}
-	  and does not have a known probability distribution
-	  \begin{equation*}
-	    P(x) \neq C\exp{-\beta V(x)}.
-	  \end{equation*}
+When studying trajectories of rare events, the vast majority of computational time is spent waiting for the event of interest to happen.
+NEUS is a sampling algorithm that is designed for rare events.  
+It works by constructing an order parameter space using one or more degrees of freedom from the system that describe the relevant dynamics.  
+This space is then divided into regions, and separate simulations are conducted within each region.  
+\textbf{By enforcing sampling in every region, NEUS can simulate all stages of the event simultaneously}, and eliminate the waiting time required to see a rare event.
 
-	  \textbf{Key insight:  run unbiased dynamics and restart walkers using a flux input distribution that is developed on-the-fly}
+          \vskip1ex
+	  \vspace{10 mm}
+To conduct the ``regional'' simulations in nonequilibrium systems, one needs to be able to remove the bias in a physical way.
+\textbf{Key insight:  run unbiased dynamics and restart walkers using a flux input distribution that is developed on-the-fly.}
 
 	  \vspace{20 mm}
 
@@ -172,7 +172,7 @@
 	    \end{column}
 	    \begin{column}{.55\linewidth}
                 \begin{figure}[hctp]
-                    \includegraphics[width=1.0\linewidth]{images/coord_server.pdf}
+%                    \includegraphics[width=1.0\linewidth]{images/coord_server.pdf}
                 \end{figure}
 	    \end{column}
 	  \end{columns}
