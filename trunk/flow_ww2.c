@@ -57,6 +57,7 @@ ServedCoords Coords_prob;
 ServedCoords Coords_nprob;
 ServedCoords Coords_thist;
 ServedCoords Coords_thistsig;
+ServedCoords Coords_thistfr;
 ServedCoords Coords_full;
 ServedCoords Coords_nlist;
 ServedCoords Coords_twlist;
@@ -72,7 +73,7 @@ double **weight, **wavg, **tau;
 opoint_t **stravg;
 opoint_t **z;
 int **count, **on, **navg, **ntau;
-int ***thist, ***thist2;
+int ***thist, ***thist2, ***thist3;
 int allind[2];
 int stredit=0;  /* stredit = 0 (hasn't been done yet) 
 	         stredit = 1 (it's done already)
@@ -86,7 +87,7 @@ double *twavg1, *tweight1, *ttau1;
 double *tstravg1, *tstravg2, *tz1, *tpt, *lfrac;
 double globtim=0.;
 int nglobtim=0;
-int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2, *tthist3, *tthist4, ****nin, **nout;
+int *tint1, *tint2, *ton1, *ton2, *tprob1, *tprob2, *tnprob1, *tnprob2, *tthist1, *tthist2, *tthist3, *tthist5, ****nin, **nout;
 int *tnwstack1, *tnwstack2, *tmpfrom, **allcnt, **allon, **secind, **tertind;
 int verb=2;
 int me, nproc, status, beadsp2, beadsp3, lockind, lo[2], hi[2], ld[1];
@@ -319,6 +320,7 @@ int main(int argc,char** argv){
   tnprob1 = (int *) malloc(lim*sizeof(int));
   tthist1 = (int *) malloc(2*beads*tres*sizeof(int));
   tthist3 = (int *) malloc(2*beads*tres*sizeof(int));
+  tthist5 = (int *) malloc(2*beads*tres*sizeof(int));
 
   nout = (int **) alloc2d(sizeof(int), 2, beads);
   nin = (int ****) alloc4d(sizeof(int), 2, beads, 2, beads);
@@ -334,6 +336,7 @@ int main(int argc,char** argv){
   count= (int **) alloc2d(sizeof(int), 2, beads);
   thist = (int ***) alloc3d(sizeof(int), 2, beads, tres);
   thist2 = (int ***) alloc3d(sizeof(int), 2, beads, tres);
+  thist3 = (int ***) alloc3d(sizeof(int), 2, beads, tres);
   if (wtalg == 2) {
     tau = (double **) alloc2d(sizeof(double), 2, beads);
     ntau = (int **) alloc2d(sizeof(int), 2, beads);
@@ -759,6 +762,15 @@ s      GA_Sync();
     if (me == 0) {
       printf("proc %d: TCOB\n",me); fflush(stdout);
 
+      /* update weights */
+
+      if (cycle%wtupdt == 0) {
+	updtwts(cycle/wtupdt);
+      }
+    }
+    GA_Sync();
+    
+    if (me == 0) {
       GetFromServer_int(&Coords_on,0,-1,ton1);
       
       onfile = fopen(onname,"a");
@@ -792,12 +804,6 @@ s      GA_Sync();
       }
       fprintf(twfile,"\n");
       fclose(twfile);
-
-      /* update weights */
-
-      if (cycle%wtupdt == 0) {
-	updtwts(cycle/wtupdt);
-      }
 
       /* compute rate */
 
@@ -835,8 +841,7 @@ s      GA_Sync();
 	/* write out thist */
 
 	wrextend(cycle/wrfrq);
-      
-      
+            
 	/* write probs */
 
 	if (wtalg != 1) {
@@ -901,6 +906,7 @@ s      GA_Sync();
 	}
       }
     } else if (me <= 2) {
+
       if (cycle%wrfrq == 0) {
 	if (tmpswitch==0) {
 	  tmpswitch=1;
@@ -1095,6 +1101,7 @@ s      GA_Sync();
   status = DestroyCoordServer(&Coords_nprob);
   status = DestroyCoordServer(&Coords_thist);
   status = DestroyCoordServer(&Coords_thistsig);
+  status = DestroyCoordServer(&Coords_thistfr);
   status = DestroyCoordServer(&Coords_full);
   status = DestroyCoordServer(&Coords_nlist);
   status = DestroyCoordServer(&Coords_twlist);
@@ -1985,13 +1992,14 @@ void wrextend(int index) {
     for the normal order parameter and the sig-modified o.p.*/
 
   int dir, bead, ind, mcount, mcount2, tsum;
-  double x[tres], x2[tres], sum, sum2, ext, ootsum;
+  double x[tres], x2[tres], x3[tres], sum, sum2, sum3, ext, ootsum;
   FILE * tout;
   char tmpname[30];
   
   GetFromServer_dbl(&Coords_weight,0,-1,tweight1);
   GetFromServer_int(&Coords_thist,0,-1,tthist1);
   GetFromServer_int(&Coords_thistsig,0,-1,tthist3);
+  GetFromServer_int(&Coords_thistfr,0,-1,tthist5);
   
   mcount = 0;
   mcount2 = 0;
@@ -2002,6 +2010,7 @@ void wrextend(int index) {
       for (ind=0;ind<tres;ind++) {
 	thist[dir][bead][ind] = tthist1[mcount2];
 	thist2[dir][bead][ind] = tthist3[mcount2];
+	thist3[dir][bead][ind] = tthist5[mcount2];
 	mcount2++;
       }
     }
@@ -2012,6 +2021,7 @@ void wrextend(int index) {
   for (ind=0;ind<=tres-1;ind++) {
     x[ind] = 0.;
     x2[ind] = 0.;
+    x3[ind] = 0.;
   }
 
   dir = 0;
@@ -2044,13 +2054,29 @@ void wrextend(int index) {
 	}
       }
     }
+
+    /* thistfr */
+    tsum = 0;
+    for (ind=0;ind<=tres-1;ind++) {
+      tsum += thist3[dir][bead][ind];
+    }
+    if (tsum) {
+      ootsum = 1./(float)tsum;
+      for (ind=0;ind<=tres-1;ind++) {
+	if (thist3[dir][bead][ind]) {
+	  x3[ind] += thist3[dir][bead][ind]*weight[dir][bead]*ootsum;
+	}
+      }
+    }
   }
 
   sum = 0.;
   sum2 = 0.;
+  sum3 = 0.;
   for (ind=0;ind<=tres-1;ind++) {
     sum += x[ind];
     sum2 += x2[ind];
+    sum3 += x3[ind];
   }
 
   sprintf(tmpname,"%s%d%s","thist1_",index,".dat");
@@ -2069,11 +2095,20 @@ void wrextend(int index) {
   }
   fclose(tout);
 
+  sprintf(tmpname,"%s%d%s","t3hist1_",index,".dat");
+  tout = fopen(tmpname,"w");
+  for (ind=0;ind<=tres-1;ind++) {
+    ext = tmin[2] + (tmax[2]-tmin[2])*(ind/(float)tres);
+    fprintf(tout,"%e %e\n",ext,x3[ind]/sum3);
+  }
+  fclose(tout);
+
   /* write 2nd dir histograms */
   
   for (ind=0;ind<=tres-1;ind++) {
     x[ind] = 0.;
     x2[ind] = 0.;
+    x3[ind] = 0.;
   }
 
   dir = 1;
@@ -2106,13 +2141,29 @@ void wrextend(int index) {
 	}
       }
     }
+
+    /* thistfr */
+    tsum = 0;
+    for (ind=0;ind<=tres-1;ind++) {
+      tsum += thist3[dir][bead][ind];
+    }
+    if (tsum) {
+      ootsum = 1./(float)tsum;
+      for (ind=0;ind<=tres-1;ind++) {
+	if (thist3[dir][bead][ind]) {
+	  x3[ind] += thist3[dir][bead][ind]*weight[dir][bead]*ootsum;
+	}
+      }
+    }
   }
 
   sum = 0.;
   sum2 = 0.;
+  sum3 = 0.;
   for (ind=0;ind<=tres-1;ind++) {
     sum += x[ind];
     sum2 += x2[ind];
+    sum3 += x3[ind];
   }
 
   sprintf(tmpname,"%s%d%s","thist2_",index,".dat");
@@ -2131,11 +2182,20 @@ void wrextend(int index) {
   }
   fclose(tout);
 
+  sprintf(tmpname,"%s%d%s","t3hist2_",index,".dat");
+  tout = fopen(tmpname,"w");
+  for (ind=0;ind<=tres-1;ind++) {
+    ext = tmin[2] + (tmax[2]-tmin[2])*(ind/(float)tres);
+    fprintf(tout,"%e %e\n",ext,x3[ind]/sum3);
+  }
+  fclose(tout);
+
   /* write total histograms */
   
   for (ind=0;ind<=tres-1;ind++) {
     x[ind] = 0.;
     x2[ind] = 0.;
+    x3[ind] = 0.;
   }
 
   for (dir=0;dir<=1;dir++) {
@@ -2168,14 +2228,30 @@ void wrextend(int index) {
 	  }
 	}
       }
+
+      /* thistfr */
+      tsum = 0;
+      for (ind=0;ind<=tres-1;ind++) {
+	tsum += thist3[dir][bead][ind];
+      }
+      if (tsum) {
+	ootsum = 1./(float)tsum;
+	for (ind=0;ind<=tres-1;ind++) {
+	  if (thist3[dir][bead][ind]) {
+	    x3[ind] += thist3[dir][bead][ind]*weight[dir][bead]*ootsum;
+	  }
+	}
+      }
     }
   }
     
   sum = 0.;
   sum2 = 0.;
+  sum3 = 0.;
   for (ind=0;ind<=tres-1;ind++) {
     sum += x[ind];
     sum2 += x2[ind];
+    sum3 += x3[ind];
   }
 
   sprintf(tmpname,"%s%d%s","thist",index,".dat");
@@ -2194,6 +2270,14 @@ void wrextend(int index) {
   }
   fclose(tout);
 
+  sprintf(tmpname,"%s%d%s","t3hist",index,".dat");
+  tout = fopen(tmpname,"w");
+  for (ind=0;ind<=tres-1;ind++) {
+    ext = tmin[2] + (tmax[2]-tmin[2])*(ind/(float)tres);
+    fprintf(tout,"%e %e\n",ext,x3[ind]/sum3);
+  }
+  fclose(tout);
+
   mcount2 = 0;
   for (dir=0;dir<=1;dir++) {
     for (bead=0;bead<=beads-1;bead++) {
@@ -2206,6 +2290,7 @@ void wrextend(int index) {
 
   PutToServer_int(&Coords_thist,0,-1,tthist1);
   PutToServer_int(&Coords_thistsig,0,-1,tthist1);
+  PutToServer_int(&Coords_thistfr,0,-1,tthist1);
 
 }
 /*-------------------------------------------------------------------------*/
@@ -2519,6 +2604,20 @@ opoint_t ptavg(opoint_t x, opoint_t y) {
      allind[0] = 0;
      allind[1] = tres*beads*dir + tres*bead + index;
      tempi[0] = 1 + NGA_Read_inc(Coords_thistsig.ga,allind,1);
+   }
+
+   temps[0] = 0.;
+   for (i=0;i<ndim;i++) {
+     temps[0] += (coor.x[0][i]-coor.x[npart-1][i])*(coor.x[0][i]-coor.x[npart-1][i]);
+   }
+   temps[0] = sqrt(temps[0]);
+   index = tres*(temps[0]-tmin[2])/(tmax[2]-tmin[2]);
+   if ((index < 0) || (index >= tres)) {
+     printf("Error in stack index (fr)! %f\n",temps[0]);
+   } else {
+     allind[0] = 0;
+     allind[1] = tres*beads*dir + tres*bead + index;
+     tempi[0] = 1 + NGA_Read_inc(Coords_thistfr.ga,allind,1);
    }
  }
 /*-------------------------------------------------------------------------*/
@@ -4200,6 +4299,7 @@ void createservers() {
   MaxNum = 2*beads*tres;
   status = CreateCoordServer_int(&Coords_thist, &MaxNum, "test");
   status = CreateCoordServer_int(&Coords_thistsig, &MaxNum, "test");
+  status = CreateCoordServer_int(&Coords_thistfr, &MaxNum, "test");
   
   MaxNum = 2*beads*mxlist*3*npart*ndim;
   status = CreateCoordServer_dbl(&Coords_pts, &MaxNum, "test");
