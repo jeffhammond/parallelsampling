@@ -6,28 +6,28 @@
 #define NEMERG_c 765
 
 const int phase = 2;
-int wtalg = 4;       /* 1 = local ; 2 = global ; 3 = VdE ; 4 = ww-avg */
+int wtalg = 3;       /* 1 = local ; 2 = global ; 3 = VdE ; 4 = ww-avg */
 const char flname[30] = "NOREAD";
 const char wname[30] = "NOREAD";
-const char fxname[30] = "NOREAD";
-const char pname[30] = "NOREAD";
+const char fxname[30] = "iflux";
+const char pname[30] = "iprob";
 const char tname[30] = "NOREAD";
 
 long seed = 1;
 const int beads = 40;
-const int wtupdt = 20;     /* measured in cycles */
-const int T = 2000;         /* measured in number of cycles */
+const int wtupdt = 1000;     /* measured in cycles */
+const int T = 3000;         /* measured in number of cycles */
 const int every = 2000;  /* steps */
 const int stkfrq = 100;   /* steps */
 const int wrfrq = 20;      /* cycles */
-const int pzero = 500;      /* cycles */
+const int pzero = 5000;      /* cycles */
 const int xyzfrq = 1000;  /* steps */
 const int globfrq = 5;   /* steps */
 const int chkfrq = 5;    /* steps */
 const int tres = 200;
 const int nemerg = NEMERG_c;
-const double tmin[2] = {700.,800.};
-const double tmax[2] = {1000.,970.};
+const double tmin[3] = {700.,800.,0.};
+const double tmax[3] = {1000.,970.,200.};
 const double divfac = 0.7;
 const double bfrac = 1.;
 const double spltfac = 0.9;
