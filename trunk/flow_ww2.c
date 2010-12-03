@@ -4,8 +4,6 @@
 #include <stdlib.h> /* required for randomize() and random() */
 #include <time.h>
 #include <unistd.h>
-#include "../nrutil.h"
-#include "../nr.h"    /* numerical recipes: for GJ elim */
 #include "neusglob.h"
 #include "../aryeh.h"
 #include "../myCoordServer.h"
@@ -132,6 +130,7 @@ int state, bas, mytim=0, sofar, polyerr=0;
 opoint_t ocoor;
 point_t coor;
 int myclock=0, tmpswitch;
+void scalflux();
 opoint_t ptavg(opoint_t x, opoint_t y);
 opoint_t projx(point_t x);
 opoint_t projxsig(point_t x);
@@ -152,6 +151,21 @@ int getnprob(int dir, int bead, int i, int j);
 void chkprim(int dir, int bead);
 int chkdir(int dir, int bead);
 int getlockind(int var, int dir, int bead);
+void dgesvd_(char *JOBU,  // 'A' returns all of the matrix U
+	     char *JOBVT,  // 'A' returns all of VT
+	     int *M,     // rows of A
+	     int *N,     // cols of A
+	     double *A,  // A matrix
+	     int *LDA,   // leading dimension of A
+	     double *S,  // sorted singular values of A
+	     double *U,  // U matrix
+	     int *LDU,   // leading dimension of U
+	     double *VT, // N by N matrix if JOBVT = 'A'
+	     int *LDVT,  // 
+	     double *WORK, 
+	     int *LWORK,
+	     int *INFO
+	     ); 	
 int rstart[2], tempi[1], tempi2[1], endtraj;
 
 void **alloc2d(int varsize, int n, int p) ; 
@@ -279,6 +293,10 @@ int main(int argc,char** argv){
   }
   //  sprintf(outname,"%s","out0.dat");
   if (me == 0) {
+      sprintf(wtname,"%s","fmat2.dat");
+      ratFile = fopen(wtname,"w");
+      fclose(ratFile);
+
       sprintf(wtname,"%s","weight.dat");
       ratFile = fopen(wtname,"w");
       fclose(ratFile);
@@ -412,6 +430,15 @@ int main(int argc,char** argv){
     }
     PutToServer_dbl(&Coords_z,0,-1,tz1);
     
+    if (strcmp(fxname,"NOREAD") != 0) {  /* read in fluxes */
+      if (verb >= 2) {
+	printf("Using flux configuration from %s\n", fxname); fflush(stdout);
+      }
+      fxread();
+    } else {
+      rdemerg();
+    }
+
     /* read in fprob */
 
     if (strcmp(pname,"NOREAD") != 0) {
@@ -419,6 +446,20 @@ int main(int argc,char** argv){
 	printf("Reading prob data from %s\n", pname); fflush(stdout);
       }
       probread();
+      if (wtalg ==3) {
+	mcount=0;
+	for (j=0;j<2;j++) {
+	  for (k=0;k<beads;k++) {
+	    tweight1[mcount] = 1./(float)(2*beads);
+	    mcount++;
+	  }
+	}
+	GA_Init_fence();
+	PutToServer_dbl(&Coords_weight,0,-1,tweight1);
+	GA_Fence();
+	updtwts(0);
+	scalflux();
+      }
     }
 
     /* read in ftau */
@@ -432,50 +473,43 @@ int main(int argc,char** argv){
 
     /* initialize weights */
     
-    if (strcmp(wname,"NOREAD") == 0) {
-      if (verb >= 2) {
-	printf("Automatically initializing weights\n"); fflush(stdout);
-      }
-      mcount = 0;
-      for (j=0;j<2;j++) {
-	for (k=0;k<beads;k++) {
-	  if (wtalg == 0) {
-	    tweight1[mcount] = 0.;
-	  } else {
-	    tweight1[mcount] = 1./(float)(2*beads);
-	  }
-	  mcount++;
+    if (strcmp(pname,"NOREAD") == 0) {
+      if (strcmp(wname,"NOREAD") == 0) {
+	if (verb >= 2) {
+	  printf("Automatically initializing weights\n"); fflush(stdout);
 	}
-      }
-      if (wtalg ==0) {
-	tweight1[0] = 0.5;
-	tweight1[2*beads-1] = 0.5;
-	wtalg = 1;
-      }
-      PutToServer_dbl(&Coords_weight,0,-1,tweight1);
-      if (wtalg == 4) {
 	mcount = 0;
 	for (j=0;j<2;j++) {
 	  for (k=0;k<beads;k++) {
-	    tweight1[mcount] = 0.;
+	    if (wtalg == 0) {
+	      tweight1[mcount] = 0.;
+	    } else {
+	      tweight1[mcount] = 1./(float)(2*beads);
+	    }
+	    mcount++;
 	  }
 	}
+	if (wtalg ==0) {
+	  tweight1[0] = 0.5;
+	  tweight1[2*beads-1] = 0.5;
+	  wtalg = 1;
+	}
+	PutToServer_dbl(&Coords_weight,0,-1,tweight1);
+	if (wtalg == 4) {
+	  mcount = 0;
+	  for (j=0;j<2;j++) {
+	    for (k=0;k<beads;k++) {
+	      tweight1[mcount] = 0.;
+	    }
+	  }
+	}
+	PutToServer_dbl(&Coords_wadj,0,-1,tweight1);
+      } else {
+	if (verb >= 2) {
+	  printf("Using weight configuration from %s\n", wname); fflush(stdout);
+	}
+	wtread();
       }
-      PutToServer_dbl(&Coords_wadj,0,-1,tweight1);
-    } else {
-      if (verb >= 2) {
-	printf("Using weight configuration from %s\n", wname); fflush(stdout);
-      }
-      wtread();
-    }
-
-    if (strcmp(fxname,"NOREAD") != 0) {  /* read in fluxes */
-      if (verb >= 2) {
-	printf("Using flux configuration from %s\n", fxname); fflush(stdout);
-      }
-      fxread();
-    } else {
-      rdemerg();
     }
 
     mcount = 0;
@@ -1156,7 +1190,6 @@ int back (int dir, int bead) {
     } else {
       listind = 1;
     }
-
     lockind = getlockind(0,dir,bead);
     GA_Lock(lockind);
     GA_Init_fence();
@@ -1370,12 +1403,22 @@ int back (int dir, int bead) {
 	tempi[0] = 0;
 	ind = dir*beads + bead;
 	printf("proc %d: twlist = 0, turning (%d,%d) off!\n",me,dir,bead);
+	if ((verb >= 3) || ((verb >= 2) && (me ==0))) {
+	  mainout = fopen(outname,"a");
+	  fprintf(mainout,"twlist = 0, turning (%d,%d) off!\n",dir,bead);
+	  fclose(mainout);
+	}
 	PutToServer_int(&Coords_on,0,ind,tempi);
 	GA_Fence();
 	GA_Unlock(lockind);
 	gotit = 0;
       }
     } else {
+      if ((verb >= 3) || ((verb >= 2) && (me ==0))) {
+	mainout = fopen(outname,"a");
+	fprintf(mainout,"in region (%d,%d), no points in list %d (%f,%f,%f)!\n",dir,bead,listind,t1,t2,oran);
+	fclose(mainout);
+      }
       gotit = 0;
     }
   }
@@ -1456,12 +1499,12 @@ void updtwts(int ind) {
    
   void getfrac(int dir, int bead);
   double lim2, sum;
-  int tgt,dir,bead,good,lim,i, mcount,j,n1,n2,mcount2;
+  int tgt,dir,bead,good,lim,i, mcount,j,n1,n2,mcount2, nav;
   FILE * wtout, *tmpfile;
   char tmpname[30];
-  int wtmat(int sdir, int sbead);
-  int wtmat2(int sdir, int sbead);
+  int wtmat2();
 
+  GA_Init_fence();
   lim = 2*beads;
   
   if (wtalg == 1) {
@@ -1490,66 +1533,8 @@ void updtwts(int ind) {
     PutToServer_int(&Coords_nwstack,0,-1,tnwstack1);
 
   } else if (wtalg == 2) {
-
-    /* perform matrix calculations, reset counters */
-    
-    GetFromServer_dbl(&Coords_weight,0,-1,tweight1);
-    GetFromServer_dbl(&Coords_tau,0,-1,ttau1);
-    GetFromServer_int(&Coords_ntau,0,-1,tint1);
-    GetFromServer_int(&Coords_nprob,0,-1,tnprob1);
-    GetFromServer_int(&Coords_prob,0,-1,tprob1);
-
-    mcount = 0;
-    for (dir=0;dir<=1;dir++) {
-      for (bead=0;bead<=beads-1;bead++) {
-	weight[dir][bead] = tweight1[mcount];
-	tau[dir][bead] = ttau1[mcount];
-	ntau[dir][bead] = tint1[mcount];
-	mcount++;
-      }
-    }
-
-    for (dir=0;dir<=1;dir++) {
-      for (bead=0;bead<=beads-1;bead++) {
-	wavg[dir][bead] = 0.;
-	getfrac(dir,bead);
-      }
-    }
-
-    good = 1;
-    for (dir=0;dir<=1;dir++) {
-      for (bead=0;bead<=beads-1;bead++) {
-	if (good) {
-	  if (!wtmat(dir,bead)) {
-	    printf("Weight update not completed!\n");
-	    good = 0;
-	  }
-	}
-      }
-    }
-    if (good) {
-      lim = 2*beads;
-      lim2 = 1.0/(float)lim;
-      for (dir=0;dir<=1;dir++) {
-	for (bead=0;bead<=beads-1;bead++) {
-	  weight[dir][bead] = wavg[dir][bead]*lim2;
-	}
-      }
-      if (verb >= 3) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Weight update completed\n");
-	fclose(mainout);
-      }
-      
-      mcount = 0;
-      for (dir=0;dir<=1;dir++) {
-	for (bead=0;bead<=beads-1;bead++) {
-	  tweight1[mcount] = weight[dir][bead]; 
-	  mcount++;
-	}
-      }
-      PutToServer_dbl(&Coords_weight,0,-1,tweight1);
-    }
+    printf("Error!  wtalg = 2!\n");
+    gaexit(2);
   } else if (wtalg == 3) {
 
     /* perform matrix calculations, reset counters */
@@ -1565,20 +1550,18 @@ void updtwts(int ind) {
 	mcount++;
       }
     }
-
-    mcount = 0;
+    
     for (dir=0;dir<=1;dir++) {
       for (bead=0;bead<=beads-1;bead++) {
-	mcount++;
 	wavg[dir][bead] = 0.;
 	nout[dir][bead] = 0;
 	for (i=0;i<2;i++) {
 	  for (j=0;j<beads;j++) {
-	    nout[dir][bead] += getnprob(dir,bead,i,j);
 	    nin[dir][bead][i][j] = 0;
 	    for (n1=0;n1<2;n1++) {
 	      for (n2=0;n2<beads;n2++) {
 		nin[dir][bead][i][j] += getprob(i,j,n1,n2,dir,bead);
+		nout[dir][bead] += getprob(dir,bead,i,j,n1,n2);
 	      }
 	    }
 	  }
@@ -1595,38 +1578,29 @@ void updtwts(int ind) {
 	}
       }
     }
-    for (dir=0;dir<=1;dir++) {
-      for (bead=0;bead<=beads-1;bead++) {
-	if (good) {
-	  if (!wtmat2(dir,bead)) {
-	    printf("Weight update not completed!\n");
-	    good = 0;
+    if (good) {
+      if (wtmat2()) {
+	for (dir=0;dir<=1;dir++) {
+	  for (bead=0;bead<=beads-1;bead++) {
+	    weight[dir][bead] = wavg[dir][bead];
 	  }
 	}
-      }
-    }
-    if (good) {
-      lim = 2*beads;
-      lim2 = 1.0/(float)lim;
-      for (dir=0;dir<=1;dir++) {
-	for (bead=0;bead<=beads-1;bead++) {
-	  weight[dir][bead] = wavg[dir][bead]*lim2;
+	if (verb >= 3) {
+	  mainout = fopen(outname,"a");
+	  fprintf(mainout,"Weight update completed\n");
+	  fclose(mainout);
 	}
-      }
-      if (verb >= 3) {
-	mainout = fopen(outname,"a");
-	fprintf(mainout,"Weight update completed\n");
-	fclose(mainout);
-      }
-      
-      mcount = 0;
-      for (dir=0;dir<=1;dir++) {
-	for (bead=0;bead<=beads-1;bead++) {
-	  tweight1[mcount] = weight[dir][bead]; 
-	  mcount++;
+	mcount = 0;
+	for (dir=0;dir<=1;dir++) {
+	  for (bead=0;bead<=beads-1;bead++) {
+	    tweight1[mcount] = weight[dir][bead]; 
+	    mcount++;
+	  }
 	}
+	PutToServer_dbl(&Coords_weight,0,-1,tweight1);
       }
-      PutToServer_dbl(&Coords_weight,0,-1,tweight1);
+    } else {
+      printf("Weight update not completed\n");
     }
   } else {
     GetFromServer_dbl(&Coords_wadj,0,-1,twavg1);
@@ -1652,6 +1626,8 @@ void updtwts(int ind) {
     PutToServer_dbl(&Coords_weight,0,-1,tweight1);
   }
     
+  GA_Fence();
+
   /* write weights */
 
   sum = 0.;
@@ -1672,215 +1648,26 @@ void updtwts(int ind) {
   fclose(wtout);
 }
 /*-------------------------------------------------------------------------*/
-int wtmat(int stdir, int stbead) {
-
-  /* this function calculates the weights */
-
-  double **fmat, **b, *vec, sum, avtau, tw, wt, tn, tprob;
-  double temp1;
-  int lim, i, j, dir, bead, regi, dirind[2*beads], regind[2*beads];
-  int ndir, ni, odir, good, sdir, sbead, ind, mcount;
-  FILE * matout;
-  good = 1;
-
-  sdir = stdir + 1;
-  sbead = stbead + 1;  /* to be compatible with Fortran indexing */
-
-  lim = 2*beads;
-
-  fmat = (double **) alloc2d(sizeof(double), lim, lim);
-  b = (double **) alloc2d(sizeof(double), lim, 1);
-  if ((vec = (double *) malloc(lim * sizeof(double))) == NULL) {
-    printf ("no memory left (vec)!\n") ;
-    gaexit(1) ;
-  }
-
-  for(i=0;i<=lim-1;i++) {
-    for(j=0;j<=lim-1;j++) {
-      fmat[i][j] = 0.;
-    }
-  }
-
-  for (i=1;i<=lim-1;i++) {
-    sum = 0.;
-    if (i+sbead <= lim/2) {
-      dir = sdir;
-      regi = i+sbead;
-    } else if (i+sbead <= lim) {
-      if (sdir == 1) {
-	dir = 2;
-      } else {
-	dir = 1;
-      }
-      regi = i+sbead-lim/2;
-    } else {
-      dir = sdir;
-      regi = i+sbead-lim;
-    }
-    if (dir == 2) {
-      regi = lim/2-regi+1;
-    }
-    dirind[i-1] = dir;
-    regind[i-1] = regi;
-
-    avtau = tau[dir-1][regi-1]/(float)ntau[dir-1][regi-1];
-
-    if (!ntau[dir-1][regi-1]) {
-      printf("0: Incomplete statistics!  Need longer wtupdt!\n");
-      printf("%d %d %d %f\n", dir, regi, ntau[dir-1][regi-1], tau[dir-1][regi-1]);
-      good = 0;
-      break; 
-    }
-
-    ind = (dir-1)*beads + (regi-1);
-    //LINE_STAMP;
-    GetFromServer_dbl(&Coords_twlist,0,ind,tempw);
-    tw = tempw[0];
-    temp1 = 1./(avtau*tw);
-
-    if (tw == 0.) {
-      printf("0.2: Incomplete statistics!  Need longer wtupdt!\n");
-      printf("%d %d %f\n", dir, regi, tw);
-      good = 0;
-      break; 
-    }
-
-    //tw = flist[dir-1][regi-1].twlist;
-    if (dir == 1) {
-      if (regi != lim/2) {
-	ndir = 1;
-	ni = regi+1;
-      } else {
-	ndir = 2;
-	ni = lim/2;
-      }
-    } else {
-      if (regi != 1) {
-	ndir = 2;
-	ni = regi-1;
-      } else {
-	ndir = 1;
-	ni = 1;
-      }
-    }
-    if (i == lim-1) {
-      dirind[i] = ndir;
-      regind[i] = ni;
-    }
-    for (odir=1;odir<=2;odir++) {
-      for (j=1;j<=lim/2;j++) {
-
-	if (getnprob(dir-1,regi-1,odir-1,j-1) != 0) {
-	  tprob = getprob(dir-1,regi-1,odir-1,j-1,ndir-1,ni-1)/(float)getnprob(dir-1,regi-1,odir-1,j-1);
-	  if (tprob != 0.) {
-	    mcount = 2*beadsp2*(dir-1) + 2*beads*(regi-1) + beads*(odir-1) + (j-1);
-	    tn = lfrac[mcount];
-	    sum += tprob*tn*temp1;
-	  }
-	}
-      }
-    }
-
-    if (sum == 0.) {
-      printf("1: Incomplete statistics!  Need longer wtupdt!\n");
-      printf("%d %d %d %d %d %d %d\n", sdir, sbead, i, regind[i-1], dirind[i-1], ndir, ni);
-      good = 0;
-      break;
-    }
-
-    fmat[i-1][i-1] = sum;
-    
-    if (abs(sum) > 1) {
-      printf("sum error! %d %e %e %e\n",i, avtau, tw, sum);
-    }
-    avtau = tau[ndir-1][ni-1]/(float)ntau[ndir-1][ni-1];
-    mcount = 2*beadsp2*(ndir-1) + 2*beads*(ni-1) + beads*(dir-1) + (regi-1);
-    tn = lfrac[mcount];
-    
-    ind = (ndir-1)*beads + (ni-1);
-    //LINE_STAMP;
-    GetFromServer_dbl(&Coords_twlist,0,ind,tempw);
-    sum = tn/(avtau*tempw[0]);
-    //sum = tn/(avtau*flist[ndir-1][ni-1].twlist);
-    
-    if ((avtau == 0.) || (tempw[0] == 0.)) {
-      printf("1.2: Incomplete statistics!  Need longer wtupdt!\n");
-      printf("%d %d %f %d %f\n", ndir, ni, tau[ndir-1][ni-1],ntau[ndir-1][ni-1],tempw[0]);
-      good = 0;
-      break; 
-    }
-
-    if (sum == 0.) {
-      printf("2: Incomplete statistics!  Need longer wtupdt!\n");
-      printf("%d %d %d %d %e\n", ndir, ni, dir, regi, tn);
-      good = 0;
-      break;
-    }
-    fmat[i][i-1] = -sum;
-  }
-
-  if (good) {
-    for (i=1;i<=lim;i++) { /* write 1s for normalization */
-      fmat[i-1][lim-1] = 1.;
-    }
-    
-    if (verb >= 2) {
-      matout = fopen("fmat.dat","w");
-      for (i=0;i<=lim-1;i++) {
-	for (j=0;j<=lim-1;j++) {
-	  fprintf(matout,"%e ",fmat[j][i]);
-	}
-	fprintf(matout,"\n");
-      }
-      fclose(matout);
-    }
-    
-    /* invert matrix */
-    
-    for (j=0;j<=lim-1;j++) {
-      b[j][0] = j;
-    }
-    
-    gaussj(fmat,lim,b,1);
-    
-    for (i=0;i<=lim-1;i++) {
-      wt = weight[dirind[i]-1][regind[i]-1];
-      wavg[dirind[i]-1][regind[i]-1] += wt + wfrac*(fmat[lim-1][i] - wt);
-      
-      if (fmat[lim-1][i] < 0.0) {
-	printf("negative weights! %d %d\n", dirind[i], regind[i]);
-	good = 0;
-      }
-    }
-  }    
-  free(fmat);
-  free(b);
-  free(vec);
-  
-  return good;
-}
-/*---------------------------------------------*/
-int wtmat2(int dir, int bead) {
+int wtmat2() {
 
   /* this function calculates the weights using the VdE method */
 
-  int lim, i, j, k, n1, n2, ind1, ind2, good, allequal;
-  double **fmat, **b, *vec, wt, *vec2, sum1, sum2;
+  int lim, i, j, k, n1, n2, ind1, ind2, good, allequal, *IPIV, INFO, LWORK;
+  double **fmat, wt, sum1, sum2, *newmat, *WORK, *umat, *smat, *vtmat;
   FILE *matout;
+  char JOBU, JOBVT;
 
   good = 1;
   lim = 2*beads;
+  LWORK = 64*lim;
 
   fmat = (double **) alloc2d(sizeof(double), lim, lim);
-  b = (double **) alloc2d(sizeof(double), lim, 1);
-  if ((vec = (double *) malloc(lim * sizeof(double))) == NULL) {
-    printf ("no memory left (vec)!\n") ;
-    gaexit(1) ;
-  }
-  if ((vec2 = (double *) malloc(lim * sizeof(double))) == NULL) {
-    printf ("no memory left (vec2)!\n") ;
-    gaexit(1) ;
-  }
+  newmat = (double *) malloc(lim*lim*sizeof(double));
+  smat = (double *) malloc(lim*sizeof(double));
+  umat = (double *) malloc(lim*lim*sizeof(double));
+  vtmat = (double *) malloc(lim*lim*sizeof(double));
+  IPIV = (int *) malloc(lim*sizeof(int));
+  WORK = (double *) malloc(LWORK*sizeof(double));
 
   for(i=0;i<=lim-1;i++) {
     for(j=0;j<=lim-1;j++) {
@@ -1891,101 +1678,84 @@ int wtmat2(int dir, int bead) {
   for(i=0;i<2;i++) {
     for (j=0;j<beads;j++) {
       ind1 = i*(lim/2) + j;
-      fmat[ind1][ind1] = -1.;
       for (n1=0;n1<2;n1++) {
 	for (n2=0;n2<beads;n2++) {
 	  ind2 = n1*(lim/2) + n2;
 	  if (ind2 != ind1) {
-	    fmat[ind1][ind2] = nin[i][j][n1][n2]/(float)nout[i][j];
+	    if (nin[i][j][n1][n2] < 0) {
+	      printf("Error! nin(%d,%d,%d,%d) = %d!\n",i,j,n1,n2,nin[i][j][n1][n2]);
+	      exit(2);
+	    }
+	    fmat[ind1][ind2] = nin[i][j][n1][n2];
+	    fmat[ind2][ind2] -= nin[i][j][n1][n2];
 	  }
 	}
       }
     }
   }
 
-  ind1 = dir*(lim/2) + bead;
-  for (i=0;i<lim;i++) { /* write 1s for normalization */
-    fmat[ind1][i] = 1.;
-  }
-    
   if (verb >= 2) {
     matout = fopen("fmat.dat","w");
+    k = 0;
     for (i=0;i<=lim-1;i++) {
       for (j=0;j<=lim-1;j++) {
-	fprintf(matout,"%e ",fmat[i][j]);
+	fprintf(matout,"%d ",(int)fmat[i][j]);
+	newmat[k] = fmat[i][j];
+	k++;
       }
       fprintf(matout,"\n");
     }
     fclose(matout);
   }
 
-/* check for a singular matrix */
-    
-  good = 1;
+  JOBU = 'A';
+  JOBVT = 'A';
 
-  for (i=0;i<lim-1;i++) {
-    for (j=i+1;j<lim;j++) {
-      sum1 = 0.;
-      sum2 = 0.;
-      for (k=0;k<lim;k++) {
-	vec[k] = fmat[i][k];
-	vec2[k] = fmat[j][k];
-	sum1 += vec[k];
-	sum2 += vec2[k];
-      }
-      allequal = 1;
-      for (k=0;k<lim;k++) {
-	vec[k] /= sum1;
-	vec2[k] /= sum2;
-	if (vec[k] != vec2[k]) {
-	  allequal = 0;
-	}
-      }
-      if (allequal) {
-	good = 0;
-      }
-    }
+  dgesvd_(&JOBU,&JOBVT,&lim,&lim,newmat,&lim,smat,umat,&lim,vtmat,&lim,WORK,&LWORK,&INFO);
+
+  sum1 = 0.;
+  for (i=0;i<lim;i++) {  
+    smat[i] = umat[(lim-1)*(lim)+i];
+    sum1 += smat[i];
   }
-    
+  for (i=0;i<lim;i++) {  
+    smat[i] = smat[i]/sum1;
+  }
+
   /* invert matrix */
     
-  for (j=0;j<=lim-1;j++) {
-    b[j][0] = j;
-  }
-    
-  gaussj(fmat,lim,b,1);
-   
-  if (verb >= 2) {
-    matout = fopen("fmat2.dat","w");
-    for (i=0;i<=lim-1;i++) {
-      for (j=0;j<=lim-1;j++) {
-	fprintf(matout,"%e ",fmat[i][j]);
-      }
-      fprintf(matout,"\n");
-    }
-    fclose(matout);
-  }
-
+  k=0;
   for (i=0;i<2;i++) {
     for (j=0;j<beads;j++) {
-      wt = weight[i][j];
-      ind2 = i*(lim/2) + j;
-      wavg[i][j] += wt + wfrac*(fmat[ind2][ind1] - wt);
-      if (fmat[ind2][ind1] < 0.0) {
-	printf("negative weights! %f %d %d\n", fmat[ind2][ind1], ind2, ind1);
+      if (smat[k] < 0) {
 	good = 0;
+      }
+      k++;
+    }
+  }
+
+  if (good) {
+    k = 0;
+    for (i=0;i<2;i++) {
+      for (j=0;j<beads;j++) {
+	wt = weight[i][j];
+	wavg[i][j] += wt + wfrac*(smat[k] - wt);
+	k++;
       }
     }
   }
       
   free(fmat);
-  free(b);
-  free(vec);
-  free(vec2);
+  free(newmat);
+  free(smat);
+  free(umat);
+  free(vtmat);
+  free(IPIV);
+  free(WORK);
   
   return good;
 }
-/*-------------------------------------------------------------------------*/
+
 void wrextend(int index) {
     
   /* this function writes out the conditional and total theta histograms 
@@ -3050,6 +2820,8 @@ void fxread() {
      from the input file 'fxname' */
 
   int j, k, op, dir, ti, tj, tk, limit, pt, dim, part, ind, mcount, listind;
+  int scale;
+  double fac;
   FILE * fxin;
   float temp;
   float tw;
@@ -3067,6 +2839,7 @@ void fxread() {
 	  
 	fscanf(fxin,"%d %f", &tempi[0], &tw);
 	tempw[0] = tw;
+	printf("(%d,%d,%d) = %e\n",j,k,listind,tempw[0]);
 	ind = j*beads + k;
 	//LINE_STAMP;
 	PutToServer_int(&Coords_nlist,listind,ind,tempi);
@@ -3081,41 +2854,42 @@ void fxread() {
 	//LINE_STAMP;
 	PutToServer_int(&Coords_full,listind,ind,tempi2);
 	limit = tempi[0];
-	
-	for (pt=0; pt<=limit-1; pt++) {
-	  fscanf(fxin,"%d %d ", &tempi[0], &tempi2[0]);
-	  ind = 2*mxlist*beads*j + 2*mxlist*k + 2*pt;
-	  PutToServer_int(&Coords_from,listind,ind,tempi);
-	  PutToServer_int(&Coords_from,listind,ind+1,tempi2);
-	  
-	  fscanf(fxin,"%f %d ",&tw,&tempi[0]);
-	  tempw[0] = tw;
-	  ind = mxlist*beads*j + mxlist*k + pt;
-	  PutToServer_dbl(&Coords_wlist,listind,ind,tempw);
-	  PutToServer_int(&Coords_clock,listind,ind,tempi);
-	  fscanf(fxin,"%d ",&tempi[0]);
-	  PutToServer_int(&Coords_mytim,listind,ind,tempi);
-	  
-	  mcount = 0;
-	  for (part=0; part<npart;part++) {
-	    for (dim=0; dim<=ndim-1; dim++) {
-	      fscanf(fxin,"%f ", &tw);
-	      tpt[mcount] = tw;
-	      mcount++;
-	      fscanf(fxin,"%f ", &tw);
-	      tpt[mcount] = tw;
-	      mcount++;
-	      fscanf(fxin,"%f ", &tw);
-	      tpt[mcount] = tw;
-	      mcount++;
-	    }
-	  }	    
-	  
-	  lo[0] = listind;
-	  hi[0] = listind;
-	  lo[1] = 3*npart*ndim*mxlist*beads*j + 3*npart*ndim*mxlist*k + 3*npart*ndim*pt;
-	  hi[1] = 3*npart*ndim*mxlist*beads*j + 3*npart*ndim*mxlist*k + 3*npart*ndim*(pt+1) -1;
-	  NGA_Put(Coords_pts.ga,lo,hi,tpt,ld);
+	if (limit) {
+	  for (pt=0; pt<=limit-1; pt++) {
+	    fscanf(fxin,"%d %d ", &tempi[0], &tempi2[0]);
+	    ind = 2*mxlist*beads*j + 2*mxlist*k + 2*pt;
+	    PutToServer_int(&Coords_from,listind,ind,tempi);
+	    PutToServer_int(&Coords_from,listind,ind+1,tempi2);
+	    
+	    fscanf(fxin,"%f %d ",&tw,&tempi[0]);
+	    tempw[0] = tw;
+	    ind = mxlist*beads*j + mxlist*k + pt;
+	    PutToServer_dbl(&Coords_wlist,listind,ind,tempw);
+	    PutToServer_int(&Coords_clock,listind,ind,tempi);
+	    fscanf(fxin,"%d ",&tempi[0]);
+	    PutToServer_int(&Coords_mytim,listind,ind,tempi);
+	    
+	    mcount = 0;
+	    for (part=0; part<npart;part++) {
+	      for (dim=0; dim<=ndim-1; dim++) {
+		fscanf(fxin,"%f ", &tw);
+		tpt[mcount] = tw;
+		mcount++;
+		fscanf(fxin,"%f ", &tw);
+		tpt[mcount] = tw;
+		mcount++;
+		fscanf(fxin,"%f ", &tw);
+		tpt[mcount] = tw;
+		mcount++;
+	      }
+	    }	    
+	    
+	    lo[0] = listind;
+	    hi[0] = listind;
+	    lo[1] = 3*npart*ndim*mxlist*beads*j + 3*npart*ndim*mxlist*k + 3*npart*ndim*pt;
+	    hi[1] = 3*npart*ndim*mxlist*beads*j + 3*npart*ndim*mxlist*k + 3*npart*ndim*(pt+1) -1;
+	    NGA_Put(Coords_pts.ga,lo,hi,tpt,ld);
+	  }
 	}
       }
     }
@@ -4671,7 +4445,7 @@ void chkprim(int dir, int bead) {
 void wrtflux(int find, int cycle) {
 
   int j,k,pt,part,dim,mcount,ind,limit,scale,listind;
-  double extra, fac;
+  double extra, fac,tsum[2];
 
   /* write fluxes, divide flux weights */
   
@@ -4697,7 +4471,15 @@ void wrtflux(int find, int cycle) {
   }
   for (k=0; k<=beads-1; k++) {
     fprintf(outFile,"%d %d\n",j,k);
+    ind = j*beads + k;
+
+    GetFromServer_dbl(&Coords_twlist,0,ind,tempw);
+    tsum[0] = tempw[0];
+    GetFromServer_dbl(&Coords_twlist,1,ind,tempw);
+    tsum[1] = tempw[0];
+
     for (listind=0;listind<2;listind++) {
+
       ind = j*beads + k;
       GetFromServer_int(&Coords_full,listind,ind,tempi);
       if (tempi[0] == 1) {
@@ -4709,10 +4491,10 @@ void wrtflux(int find, int cycle) {
       }
       
       //LINE_STAMP;
-      GetFromServer_dbl(&Coords_twlist,listind,ind,tempw);
       if (scale) {
-	fac = weight[j][k]/tempw[0];
-	tempw[0] = weight[j][k];
+	printf("(%d,%d,%d) weight(%e) tsum(%e,%e)\n",j,k,listind,weight[j][k],tsum[0],tsum[1]);
+	fac = weight[j][k]/(tsum[0]+tsum[1]);
+	tempw[0] = tsum[listind]*fac;
 	PutToServer_dbl(&Coords_twlist,listind,ind,tempw);
       }
       fprintf(outFile,"%d %e\n", limit, tempw[0]);
@@ -4755,4 +4537,56 @@ void wrtflux(int find, int cycle) {
     }
   }
   fclose(outFile);
+}
+void scalflux() {
+
+  int j,k,pt,part,dim,mcount,ind,limit,scale,listind;
+  double extra, fac,tsum[2];
+
+  /* write fluxes, divide flux weights */
+  
+  GetFromServer_dbl(&Coords_weight,0,-1,tweight1);
+  mcount = 0;
+  for (j=0;j<2;j++) {
+    for (k=0;k<beads;k++) {
+      weight[j][k] = tweight1[mcount];
+      mcount++;
+    }
+  }
+
+  for (j=0; j<2; j++) {
+    for (k=0; k<=beads-1; k++) {
+      ind = j*beads + k;
+
+      GetFromServer_dbl(&Coords_twlist,0,ind,tempw);
+      tsum[0] = tempw[0];
+      GetFromServer_dbl(&Coords_twlist,1,ind,tempw);
+      tsum[1] = tempw[0];
+
+      for (listind=0;listind<2;listind++) {
+
+	ind = j*beads + k;
+	GetFromServer_int(&Coords_full,listind,ind,tempi);
+	if (tempi[0] == 1) {
+	  limit = mxlist;
+	} else {
+	  //LINE_STAMP;
+	  GetFromServer_int(&Coords_nlist,listind,ind,tempi);
+	  limit = tempi[0];
+	}
+      
+	fac = weight[j][k]/(tsum[0]+tsum[1]);
+	tempw[0] = tsum[listind]*fac;
+	PutToServer_dbl(&Coords_twlist,listind,ind,tempw);
+
+	for (pt=0; pt<limit; pt++) {
+	  ind = mxlist*beads*j + mxlist*k + pt;
+	  GetFromServer_dbl(&Coords_wlist,listind,ind,tempw);
+	  tempw[0] = tempw[0]*fac;
+	  PutToServer_dbl(&Coords_wlist,listind,ind,tempw);
+	}
+	
+      }
+    }
+  }
 }
