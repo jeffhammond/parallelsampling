@@ -4,9 +4,6 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\definecolor{nwchemgreen}{RGB}{0,113,104} % Taken from nwchem_logo_dark.gif
-\definecolor{nwchemgold}{RGB}{0,177,177} % Taken from b_nwchem.gif
-
 \definecolor{jred}{RGB}{200,0,0}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -21,9 +18,9 @@
 \setbeamercolor{author in headline}{fg=jred}
 \setbeamercolor{institute in headline}{fg=jred}
 
-\setbeamercolor*{normal text}{fg=green, bg=blue}
+\setbeamercolor*{normal text}{fg=white, bg=black} % fg doesn't matter, bg is master background
 \setbeamercolor*{block body}{bg=white,fg=black}
-\setbeamercolor*{block title}{fg=white,bg=cyan}
+\setbeamercolor*{block title}{fg=white,bg=jred}
 \setbeamerfont{block title}{size=\large,series=\bf}
 
 \setbeamercolor{structure}{fg=blue}
@@ -53,13 +50,13 @@
 
   \begin{beamercolorbox}[wd=\paperwidth]{headline}
     \begin{columns}[T]
-      \begin{column}{.15\paperwidth}
+      \begin{column}{.10\paperwidth}
         \centering
         \begin{center}
-          \includegraphics[width=.75\linewidth]{images/ANL_H_White.jpg}
+          \includegraphics[scale=0.8]{images/ANL_H_White.jpg}
         \end{center}
       \end{column}
-      \begin{column}{.70\paperwidth}
+      \begin{column}{.80\paperwidth}
         \vskip6ex
         \centering
         \usebeamercolor{title in headline}{\color{fg}\textbf{\Huge{\inserttitle}}\\[1ex]}
@@ -68,10 +65,10 @@
         \usebeamercolor{institute in headline}{\color{fg}\LARGE{\insertinstitute}\\[1ex]}
         \vskip4ex
       \end{column}
-      \begin{column}{.15\paperwidth}
+      \begin{column}{.10\paperwidth}
         \centering
         \begin{center}
-          \includegraphics[width=.75\linewidth]{images/ANL_H_White.jpg}
+          \includegraphics[scale=1.2]{images/full-color-sm.pdf}
         \end{center}
       \end{column}
     \end{columns}
@@ -81,26 +78,6 @@
     \rule{0pt}{2pt}
   \end{beamercolorbox}
 }
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% \setbeamertemplate{footline}{
-%   \begin{beamercolorbox}[wd=\paperwidth]{upper separation line foot}
-%     \rule{0pt}{2pt}
-%   \end{beamercolorbox}
-%
-%   \leavevmode%
-%   \begin{beamercolorbox}[ht=4ex,leftskip=1cm,rightskip=1cm]{author in head/foot}%
-%     \texttt{http://www.emsl.pnl.gov/docs/nwchem/nwchem.html}
-%     \hfill
-%     \texttt{jhammond@uchicago.edu,karol.kowalski@pnl.gov}
-%     \vskip1ex
-%   \end{beamercolorbox}
-%   \vskip0pt%
-%   \begin{beamercolorbox}[wd=\paperwidth]{lower separation line foot}
-%     \rule{0pt}{2pt}
-%   \end{beamercolorbox}
-% }
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
