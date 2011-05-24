@@ -10,16 +10,20 @@ int wtalg = 3;       /* 1 = local ; 2 = global ; 3 = VdE ; 4 = ww-avg */
 const char flname[30] = "NOREAD";
 const char wname[30] = "NOREAD";
 const char fxname[30] = "iflux";
-const char pname[30] = "iprob";
+const char pname[30] = "NOREAD";
+const char nfname[30] = "influx";
 const char tname[30] = "NOREAD";
+const int begscale = 1;
+const int clrtnfx = 1;
+const int startcycle = 1; 
 
 long seed = 1;
 const int beads = 40;
-const int wtupdt = 1000;     /* measured in cycles */
+const int wtupdt = 600;     /* measured in cycles */
 const int T = 3000;         /* measured in number of cycles */
 const int every = 2000;  /* steps */
 const int stkfrq = 100;   /* steps */
-const int wrfrq = 20;      /* cycles */
+const int wrfrq = 50;      /* cycles */
 const int pzero = 5000;      /* cycles */
 const int xyzfrq = 1000;  /* steps */
 const int globfrq = 5;   /* steps */
@@ -37,7 +41,7 @@ const double frac = 0.1;
 const double wfrac = 1.0;
 const double kappa = 0.1;
 
-const double grav = 0.02;
+const double grav = 0.01;
 const double tstep = 0.01;
 const double beta = 0.0002489;
 
@@ -82,5 +86,5 @@ empoint_t emerg[NEMERG_c];
 
 opoint_t basin[2];
 double bwidth = 0.;
-double bmin = 900;
+double bmin = 900.;
 double bmax = 960.;
